@@ -7,10 +7,22 @@ import { createTimelineState, advanceTimeline, simulateCrash, simulateResume, ge
 import { getTrace, expandSpan, getFailureModes } from './core/trace-simulator.js';
 import { createHitlState, placeHitlGate, getHitlGates } from './core/hitl-simulator.js';
 import { getIntegrationDiff } from './core/integration-simulator.js';
-import { createSketch, addNode, addEdge, compareSketches, moveNode, setAnnotations } from './core/sketch-model.js';
+import { compareSketches } from './core/sketch-model.js';
 import { renderSketchSvg } from './core/sketch-render.js';
 import { validateSketch } from './core/validators.js';
 import { generateExport, rasterizeSvgToPng } from './core/export.js';
+import {
+  createDefaultWorkspace,
+  loadCapstone,
+  resetSketch,
+  setSelectedNodeType,
+  setWizardField,
+  placeNode,
+  moveNodeOnCanvas,
+  selectNodeForEdge,
+  setDragState,
+  saveCompareSketch,
+} from './core/workspace-controller.js';
 import { loadProgress, saveProgress, recordActivity, markModuleComplete, computeModuleRings, computeReviewItems } from './core/progress.js';
 import { evaluateCheckpoint } from './core/checkpoints.js';
 
@@ -24,21 +36,7 @@ const state = {
   rag: { mode: 'vector', failurePoint: null },
   timeline: createTimelineState(),
   hitl: createHitlState(),
-  workspace: {
-    sketch: createSketch('My Architecture'),
-    wizard: {
-      scenario: '',
-      justify: '',
-      tradeoffs: ['', '', ''],
-      failures: Array(5).fill(null).map(() => ({ risk: '', mitigation: '' })),
-      costLatency: '',
-      teachBackCompleted: false,
-    },
-    compareSketch: null,
-    selectedNodeType: 'Agent',
-    edgeSelection: { first: null },
-    drag: { nodeId: null, offsetX: 0, offsetY: 0 },
-  },
+  workspace: createDefaultWorkspace(),
 };
 
 const main = document.getElementById('main-content');
@@ -417,18 +415,20 @@ function renderWorkspace() {
   main.querySelectorAll('[data-capstone]').forEach((btn) => {
     btn.onclick = () => {
       const cap = CAPSTONES.find((c) => c.id === btn.dataset.capstone);
-      state.workspace.sketch = createSketch(cap.name, cap);
-      state.workspace.wizard.scenario = cap.description;
+      state.workspace = loadCapstone(state.workspace, cap);
       renderWorkspace();
     };
   });
   main.querySelectorAll('[data-node-type]').forEach((btn) => {
-    btn.onclick = () => { state.workspace.selectedNodeType = btn.dataset.nodeType; renderWorkspace(); };
+    btn.onclick = () => {
+      state.workspace = setSelectedNodeType(state.workspace, btn.dataset.nodeType);
+      renderWorkspace();
+    };
   });
   document.getElementById('export-btn').onclick = () => exportWorkspace();
   updateEdgeHint();
   document.getElementById('save-compare').onclick = () => {
-    state.workspace.compareSketch = JSON.parse(JSON.stringify(state.workspace.sketch));
+    state.workspace = saveCompareSketch(state.workspace);
     const diff = compareSketches(state.workspace.compareSketch, state.workspace.sketch);
     document.getElementById('compare-view').innerHTML = `<div><pre>${diff.summary}</pre></div><div>${renderSketchSvg(state.workspace.sketch)}</div>`;
   };
@@ -446,24 +446,24 @@ function renderWizardField(step, i, w) {
   return `<div class="wizard-step"><label>${step}</label><p>Use the timer button below.</p></div>`;
 }
 
+function applyWizardInput(key, value) {
+  state.workspace = setWizardField(state.workspace, key, value);
+  syncWorkspaceChrome();
+}
+
 function bindWizardInputs() {
-  main.querySelector('[data-wizard="scenario"]')?.addEventListener('input', (e) => { state.workspace.wizard.scenario = e.target.value; });
-  main.querySelector('[data-wizard="justify"]')?.addEventListener('input', (e) => { state.workspace.wizard.justify = e.target.value; });
-  main.querySelector('[data-wizard="costLatency"]')?.addEventListener('input', (e) => { state.workspace.wizard.costLatency = e.target.value; });
-  main.querySelector('[data-wizard="annotations"]')?.addEventListener('input', (e) => {
-    state.workspace.sketch = setAnnotations(state.workspace.sketch, e.target.value);
-    updateWorkspaceSidebar();
-  });
-  main.querySelector('[data-wizard="scenario"]')?.addEventListener('input', () => updateWorkspaceSidebar());
-  main.querySelector('[data-wizard="justify"]')?.addEventListener('input', () => updateWorkspaceSidebar());
+  main.querySelector('[data-wizard="scenario"]')?.addEventListener('input', (e) => applyWizardInput('scenario', e.target.value));
+  main.querySelector('[data-wizard="justify"]')?.addEventListener('input', (e) => applyWizardInput('justify', e.target.value));
+  main.querySelector('[data-wizard="costLatency"]')?.addEventListener('input', (e) => applyWizardInput('costLatency', e.target.value));
+  main.querySelector('[data-wizard="annotations"]')?.addEventListener('input', (e) => applyWizardInput('annotations', e.target.value));
   main.querySelectorAll('[data-wizard-tradeoff]').forEach((el) => {
-    el.addEventListener('input', (e) => { state.workspace.wizard.tradeoffs[+el.dataset.wizardTradeoff] = e.target.value; });
+    el.addEventListener('input', (e) => applyWizardInput(`tradeoff:${el.dataset.wizardTradeoff}`, e.target.value));
   });
   main.querySelectorAll('[data-wizard-fail-risk]').forEach((el) => {
-    el.addEventListener('input', (e) => { state.workspace.wizard.failures[+el.dataset.wizardFailRisk].risk = e.target.value; });
+    el.addEventListener('input', (e) => applyWizardInput(`fail-risk:${el.dataset.wizardFailRisk}`, e.target.value));
   });
   main.querySelectorAll('[data-wizard-fail-mit]').forEach((el) => {
-    el.addEventListener('input', (e) => { state.workspace.wizard.failures[+el.dataset.wizardFailMit].mitigation = e.target.value; });
+    el.addEventListener('input', (e) => applyWizardInput(`fail-mit:${el.dataset.wizardFailMit}`, e.target.value));
   });
 }
 
@@ -489,22 +489,9 @@ function updateEdgeHint() {
     : '';
 }
 
-function refreshWorkspaceAfterSketchChange() {
+function syncWorkspaceChrome() {
   renderCanvas();
   updateWorkspaceSidebar();
-}
-
-function handleNodeSelect(nodeId) {
-  const sel = state.workspace.edgeSelection;
-  if (!sel.first) {
-    sel.first = nodeId;
-  } else if (sel.first === nodeId) {
-    sel.first = null;
-  } else {
-    state.workspace.sketch = addEdge(state.workspace.sketch, sel.first, nodeId, 'flow');
-    sel.first = null;
-  }
-  refreshWorkspaceAfterSketchChange();
 }
 
 function renderCanvas() {
@@ -535,11 +522,11 @@ function bindCanvasInteractions() {
       const rect = svg.getBoundingClientRect();
       const scaleX = 800 / rect.width;
       const scaleY = 400 / rect.height;
-      state.workspace.drag = {
+      state.workspace = setDragState(state.workspace, {
         nodeId,
         offsetX: (e.clientX - rect.left) * scaleX - n.x,
         offsetY: (e.clientY - rect.top) * scaleY - n.y,
-      };
+      });
       nodeEl.setPointerCapture(e.pointerId);
     });
 
@@ -554,23 +541,26 @@ function bindCanvasInteractions() {
       const scaleY = 400 / rect.height;
       const x = Math.max(0, Math.min(700, (e.clientX - rect.left) * scaleX - state.workspace.drag.offsetX));
       const y = Math.max(0, Math.min(360, (e.clientY - rect.top) * scaleY - state.workspace.drag.offsetY));
-      state.workspace.sketch = moveNode(state.workspace.sketch, nodeId, x, y);
+      state.workspace = moveNodeOnCanvas(state.workspace, nodeId, x, y);
+      const moved = state.workspace.sketch.nodes.find((n) => n.id === nodeId);
+      if (!moved) return;
       const rectEl = nodeEl.querySelector('.node-rect');
       const textEl = nodeEl.querySelector('text');
-      rectEl.setAttribute('x', x);
-      rectEl.setAttribute('y', y);
-      textEl.setAttribute('x', x + 50);
-      textEl.setAttribute('y', y + 25);
+      rectEl.setAttribute('x', moved.x);
+      rectEl.setAttribute('y', moved.y);
+      textEl.setAttribute('x', moved.x + 50);
+      textEl.setAttribute('y', moved.y + 25);
       renderCanvasEdges(svg);
     });
 
     nodeEl.addEventListener('pointerup', () => {
       if (pointer.down && !pointer.moved) {
-        handleNodeSelect(nodeId);
+        state.workspace = selectNodeForEdge(state.workspace, nodeId);
+        syncWorkspaceChrome();
       }
       pointer.down = false;
       pointer.moved = false;
-      state.workspace.drag = { nodeId: null, offsetX: 0, offsetY: 0 };
+      state.workspace = setDragState(state.workspace, { nodeId: null, offsetX: 0, offsetY: 0 });
     });
   });
 
@@ -581,14 +571,13 @@ function bindCanvasInteractions() {
     const scaleY = 400 / rect.height;
     const x = (e.clientX - rect.left) * scaleX - 50;
     const y = (e.clientY - rect.top) * scaleY - 20;
-    state.workspace.sketch = addNode(
-      state.workspace.sketch,
-      state.workspace.selectedNodeType,
+    state.workspace = placeNode(
+      state.workspace,
       state.workspace.selectedNodeType,
       Math.max(0, Math.min(700, x)),
       Math.max(0, Math.min(360, y)),
     );
-    refreshWorkspaceAfterSketchChange();
+    syncWorkspaceChrome();
   });
 }
 
@@ -636,7 +625,8 @@ function startTeachBackTimer() {
     display.textContent = `${m}:${s.toString().padStart(2, '0')}`;
     if (--remaining < 0) {
       clearInterval(interval);
-      state.workspace.wizard.teachBackCompleted = true;
+      state.workspace = setWizardField(state.workspace, 'teachBackCompleted', true);
+      syncWorkspaceChrome();
       display.textContent = 'Teach-back complete!';
     }
   }, 1000);
@@ -677,13 +667,14 @@ function renderReview() {
       <button class="btn" id="reshsketch">Re-sketch Challenge (Week 1)</button>
     </div>`;
   document.getElementById('reshsketch')?.addEventListener('click', () => {
-    state.workspace.sketch = createSketch('Re-sketch Challenge');
+    state.workspace = resetSketch(state.workspace, 'Re-sketch Challenge');
     state.view = 'workspace';
     render();
   });
 }
 
 window.__AAA = {
+  generateMd: () => generateExport(state.workspace.sketch, state.workspace.wizard),
   runExport: async () => {
     const svg = renderSketchSvg(state.workspace.sketch);
     const png = await rasterizeSvgToPng(svg, 800, 400);
@@ -694,6 +685,7 @@ window.__AAA = {
       nodes: state.workspace.sketch.nodes.length,
       edges: state.workspace.sketch.edges.length,
       hasAnnotations: Boolean(state.workspace.sketch.annotations),
+      md,
     };
   },
 };

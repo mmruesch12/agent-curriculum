@@ -32,6 +32,10 @@ export function setAnnotations(sketch, annotations) {
 }
 
 export function addEdge(sketch, fromId, toId, label = '') {
+  const fromOk = sketch.nodes.some((n) => n.id === fromId);
+  const toOk = sketch.nodes.some((n) => n.id === toId);
+  if (!fromOk || !toOk || fromId === toId) return sketch;
+  if (sketch.edges.some((e) => e.from === fromId && e.to === toId)) return sketch;
   return {
     ...sketch,
     edges: [...sketch.edges, { from: fromId, to: toId, label }],

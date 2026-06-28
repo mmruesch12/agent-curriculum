@@ -120,6 +120,12 @@ describe('Integration diff', () => {
 });
 
 describe('Sketch model and validators', () => {
+  it('addEdge rejects dangling endpoint ids', () => {
+    const sketch = createSketch('edge test');
+    const result = addEdge(sketch, 'ghost-a', 'ghost-b');
+    assert.equal(result.edges.length, 0);
+  });
+
   it('supports named node types, move, and annotations', () => {
     let sketch = createSketch('Test');
     sketch = addNode(sketch, 'Agent', 'Main Agent', 100, 100);

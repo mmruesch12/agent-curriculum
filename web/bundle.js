@@ -784,12 +784,6 @@
   function setAnnotations(sketch, annotations) {
     return { ...sketch, annotations };
   }
-  function addEdge(sketch, fromId, toId, label = "") {
-    return {
-      ...sketch,
-      edges: [...sketch.edges, { from: fromId, to: toId, label }]
-    };
-  }
   function compareSketches(a, b) {
     const typesA = new Set(a.nodes.map((n) => n.type));
     const typesB = new Set(b.nodes.map((n) => n.type));
@@ -930,6 +924,128 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     });
   }
 
+  // web/js/core/workspace-controller.js
+  function createDefaultWorkspace() {
+    return {
+      sketch: createSketch("My Architecture"),
+      wizard: {
+        scenario: "",
+        justify: "",
+        tradeoffs: ["", "", ""],
+        failures: Array(5).fill(null).map(() => ({ risk: "", mitigation: "" })),
+        costLatency: "",
+        teachBackCompleted: false
+      },
+      compareSketch: null,
+      selectedNodeType: "Agent",
+      edgeSelection: { first: null },
+      drag: { nodeId: null, offsetX: 0, offsetY: 0 }
+    };
+  }
+  function cloneWorkspace(ws) {
+    return {
+      ...ws,
+      sketch: { ...ws.sketch, nodes: [...ws.sketch.nodes], edges: [...ws.sketch.edges] },
+      wizard: {
+        ...ws.wizard,
+        tradeoffs: [...ws.wizard.tradeoffs],
+        failures: ws.wizard.failures.map((f) => ({ ...f }))
+      },
+      edgeSelection: { ...ws.edgeSelection },
+      drag: { ...ws.drag }
+    };
+  }
+  function clearEdgeSelection(ws) {
+    return { ...ws, edgeSelection: { first: null } };
+  }
+  function nodeExists(sketch, nodeId) {
+    return sketch.nodes.some((n) => n.id === nodeId);
+  }
+  function addValidatedEdge(sketch, fromId, toId, label = "") {
+    if (!nodeExists(sketch, fromId) || !nodeExists(sketch, toId)) {
+      return sketch;
+    }
+    if (fromId === toId) return sketch;
+    const duplicate = sketch.edges.some((e) => e.from === fromId && e.to === toId);
+    if (duplicate) return sketch;
+    return {
+      ...sketch,
+      edges: [...sketch.edges, { from: fromId, to: toId, label }]
+    };
+  }
+  function loadCapstone(workspace, capstone) {
+    const ws = cloneWorkspace(workspace);
+    ws.sketch = createSketch(capstone.name, capstone);
+    ws.wizard = { ...ws.wizard, scenario: capstone.description };
+    ws.edgeSelection = { first: null };
+    return ws;
+  }
+  function resetSketch(workspace, name = "Re-sketch Challenge") {
+    const ws = cloneWorkspace(workspace);
+    ws.sketch = createSketch(name);
+    ws.edgeSelection = { first: null };
+    return ws;
+  }
+  function setSelectedNodeType(workspace, nodeType) {
+    return { ...cloneWorkspace(workspace), selectedNodeType: nodeType };
+  }
+  function setWizardField(workspace, key, value) {
+    const ws = cloneWorkspace(workspace);
+    if (key === "scenario" || key === "justify" || key === "costLatency") {
+      ws.wizard[key] = value;
+    } else if (key === "annotations") {
+      ws.sketch = setAnnotations(ws.sketch, value);
+    } else if (key.startsWith("tradeoff:")) {
+      const idx = Number(key.split(":")[1]);
+      ws.wizard.tradeoffs[idx] = value;
+    } else if (key.startsWith("fail-risk:")) {
+      const idx = Number(key.split(":")[1]);
+      ws.wizard.failures[idx] = { ...ws.wizard.failures[idx], risk: value };
+    } else if (key.startsWith("fail-mit:")) {
+      const idx = Number(key.split(":")[1]);
+      ws.wizard.failures[idx] = { ...ws.wizard.failures[idx], mitigation: value };
+    } else if (key === "teachBackCompleted") {
+      ws.wizard.teachBackCompleted = Boolean(value);
+    }
+    return ws;
+  }
+  function placeNode(workspace, type, x, y, label = type) {
+    const ws = clearEdgeSelection(cloneWorkspace(workspace));
+    ws.sketch = addNode(ws.sketch, type, label, x, y);
+    return ws;
+  }
+  function moveNodeOnCanvas(workspace, nodeId, x, y) {
+    const ws = cloneWorkspace(workspace);
+    if (!nodeExists(ws.sketch, nodeId)) return clearEdgeSelection(ws);
+    ws.sketch = moveNode(ws.sketch, nodeId, x, y);
+    return ws;
+  }
+  function selectNodeForEdge(workspace, nodeId) {
+    const ws = cloneWorkspace(workspace);
+    if (!nodeExists(ws.sketch, nodeId)) {
+      return clearEdgeSelection(ws);
+    }
+    const { first } = ws.edgeSelection;
+    if (!first) {
+      ws.edgeSelection = { first: nodeId };
+      return ws;
+    }
+    if (first === nodeId) {
+      return clearEdgeSelection(ws);
+    }
+    ws.sketch = addValidatedEdge(ws.sketch, first, nodeId, "flow");
+    ws.edgeSelection = { first: null };
+    return ws;
+  }
+  function setDragState(workspace, drag) {
+    return { ...cloneWorkspace(workspace), drag: { ...drag } };
+  }
+  function saveCompareSketch(workspace) {
+    const ws = cloneWorkspace(workspace);
+    ws.compareSketch = JSON.parse(JSON.stringify(ws.sketch));
+    return ws;
+  }
+
   // web/js/core/progress.js
   var STORAGE_KEY = "aaa-progress-v1";
   var REVIEW_DAYS = [3, 7, 14];
@@ -1023,21 +1139,7 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     rag: { mode: "vector", failurePoint: null },
     timeline: createTimelineState(),
     hitl: createHitlState(),
-    workspace: {
-      sketch: createSketch("My Architecture"),
-      wizard: {
-        scenario: "",
-        justify: "",
-        tradeoffs: ["", "", ""],
-        failures: Array(5).fill(null).map(() => ({ risk: "", mitigation: "" })),
-        costLatency: "",
-        teachBackCompleted: false
-      },
-      compareSketch: null,
-      selectedNodeType: "Agent",
-      edgeSelection: { first: null },
-      drag: { nodeId: null, offsetX: 0, offsetY: 0 }
-    }
+    workspace: createDefaultWorkspace()
   };
   var main = document.getElementById("main-content");
   var reviewNudges = document.getElementById("review-nudges");
@@ -1462,21 +1564,20 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     main.querySelectorAll("[data-capstone]").forEach((btn) => {
       btn.onclick = () => {
         const cap = CAPSTONES.find((c) => c.id === btn.dataset.capstone);
-        state.workspace.sketch = createSketch(cap.name, cap);
-        state.workspace.wizard.scenario = cap.description;
+        state.workspace = loadCapstone(state.workspace, cap);
         renderWorkspace();
       };
     });
     main.querySelectorAll("[data-node-type]").forEach((btn) => {
       btn.onclick = () => {
-        state.workspace.selectedNodeType = btn.dataset.nodeType;
+        state.workspace = setSelectedNodeType(state.workspace, btn.dataset.nodeType);
         renderWorkspace();
       };
     });
     document.getElementById("export-btn").onclick = () => exportWorkspace();
     updateEdgeHint();
     document.getElementById("save-compare").onclick = () => {
-      state.workspace.compareSketch = JSON.parse(JSON.stringify(state.workspace.sketch));
+      state.workspace = saveCompareSketch(state.workspace);
       const diff = compareSketches(state.workspace.compareSketch, state.workspace.sketch);
       document.getElementById("compare-view").innerHTML = `<div><pre>${diff.summary}</pre></div><div>${renderSketchSvg(state.workspace.sketch)}</div>`;
     };
@@ -1492,36 +1593,23 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     if (i === 5) return `<div class="wizard-step"><label>${step}</label><textarea data-wizard="costLatency">${w.wizard.costLatency}</textarea></div>`;
     return `<div class="wizard-step"><label>${step}</label><p>Use the timer button below.</p></div>`;
   }
+  function applyWizardInput(key, value) {
+    state.workspace = setWizardField(state.workspace, key, value);
+    syncWorkspaceChrome();
+  }
   function bindWizardInputs() {
-    main.querySelector('[data-wizard="scenario"]')?.addEventListener("input", (e) => {
-      state.workspace.wizard.scenario = e.target.value;
-    });
-    main.querySelector('[data-wizard="justify"]')?.addEventListener("input", (e) => {
-      state.workspace.wizard.justify = e.target.value;
-    });
-    main.querySelector('[data-wizard="costLatency"]')?.addEventListener("input", (e) => {
-      state.workspace.wizard.costLatency = e.target.value;
-    });
-    main.querySelector('[data-wizard="annotations"]')?.addEventListener("input", (e) => {
-      state.workspace.sketch = setAnnotations(state.workspace.sketch, e.target.value);
-      updateWorkspaceSidebar();
-    });
-    main.querySelector('[data-wizard="scenario"]')?.addEventListener("input", () => updateWorkspaceSidebar());
-    main.querySelector('[data-wizard="justify"]')?.addEventListener("input", () => updateWorkspaceSidebar());
+    main.querySelector('[data-wizard="scenario"]')?.addEventListener("input", (e) => applyWizardInput("scenario", e.target.value));
+    main.querySelector('[data-wizard="justify"]')?.addEventListener("input", (e) => applyWizardInput("justify", e.target.value));
+    main.querySelector('[data-wizard="costLatency"]')?.addEventListener("input", (e) => applyWizardInput("costLatency", e.target.value));
+    main.querySelector('[data-wizard="annotations"]')?.addEventListener("input", (e) => applyWizardInput("annotations", e.target.value));
     main.querySelectorAll("[data-wizard-tradeoff]").forEach((el) => {
-      el.addEventListener("input", (e) => {
-        state.workspace.wizard.tradeoffs[+el.dataset.wizardTradeoff] = e.target.value;
-      });
+      el.addEventListener("input", (e) => applyWizardInput(`tradeoff:${el.dataset.wizardTradeoff}`, e.target.value));
     });
     main.querySelectorAll("[data-wizard-fail-risk]").forEach((el) => {
-      el.addEventListener("input", (e) => {
-        state.workspace.wizard.failures[+el.dataset.wizardFailRisk].risk = e.target.value;
-      });
+      el.addEventListener("input", (e) => applyWizardInput(`fail-risk:${el.dataset.wizardFailRisk}`, e.target.value));
     });
     main.querySelectorAll("[data-wizard-fail-mit]").forEach((el) => {
-      el.addEventListener("input", (e) => {
-        state.workspace.wizard.failures[+el.dataset.wizardFailMit].mitigation = e.target.value;
-      });
+      el.addEventListener("input", (e) => applyWizardInput(`fail-mit:${el.dataset.wizardFailMit}`, e.target.value));
     });
   }
   function updateWorkspaceSidebar() {
@@ -1542,21 +1630,9 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     const first = state.workspace.edgeSelection.first;
     hint.textContent = first ? `First node selected \u2014 click a second node to connect` : "";
   }
-  function refreshWorkspaceAfterSketchChange() {
+  function syncWorkspaceChrome() {
     renderCanvas();
     updateWorkspaceSidebar();
-  }
-  function handleNodeSelect(nodeId) {
-    const sel = state.workspace.edgeSelection;
-    if (!sel.first) {
-      sel.first = nodeId;
-    } else if (sel.first === nodeId) {
-      sel.first = null;
-    } else {
-      state.workspace.sketch = addEdge(state.workspace.sketch, sel.first, nodeId, "flow");
-      sel.first = null;
-    }
-    refreshWorkspaceAfterSketchChange();
   }
   function renderCanvas() {
     const wrap = document.getElementById("canvas-wrap");
@@ -1583,11 +1659,11 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         const rect = svg.getBoundingClientRect();
         const scaleX = 800 / rect.width;
         const scaleY = 400 / rect.height;
-        state.workspace.drag = {
+        state.workspace = setDragState(state.workspace, {
           nodeId,
           offsetX: (e.clientX - rect.left) * scaleX - n.x,
           offsetY: (e.clientY - rect.top) * scaleY - n.y
-        };
+        });
         nodeEl.setPointerCapture(e.pointerId);
       });
       nodeEl.addEventListener("pointermove", (e) => {
@@ -1601,22 +1677,25 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         const scaleY = 400 / rect.height;
         const x = Math.max(0, Math.min(700, (e.clientX - rect.left) * scaleX - state.workspace.drag.offsetX));
         const y = Math.max(0, Math.min(360, (e.clientY - rect.top) * scaleY - state.workspace.drag.offsetY));
-        state.workspace.sketch = moveNode(state.workspace.sketch, nodeId, x, y);
+        state.workspace = moveNodeOnCanvas(state.workspace, nodeId, x, y);
+        const moved = state.workspace.sketch.nodes.find((n) => n.id === nodeId);
+        if (!moved) return;
         const rectEl = nodeEl.querySelector(".node-rect");
         const textEl = nodeEl.querySelector("text");
-        rectEl.setAttribute("x", x);
-        rectEl.setAttribute("y", y);
-        textEl.setAttribute("x", x + 50);
-        textEl.setAttribute("y", y + 25);
+        rectEl.setAttribute("x", moved.x);
+        rectEl.setAttribute("y", moved.y);
+        textEl.setAttribute("x", moved.x + 50);
+        textEl.setAttribute("y", moved.y + 25);
         renderCanvasEdges(svg);
       });
       nodeEl.addEventListener("pointerup", () => {
         if (pointer.down && !pointer.moved) {
-          handleNodeSelect(nodeId);
+          state.workspace = selectNodeForEdge(state.workspace, nodeId);
+          syncWorkspaceChrome();
         }
         pointer.down = false;
         pointer.moved = false;
-        state.workspace.drag = { nodeId: null, offsetX: 0, offsetY: 0 };
+        state.workspace = setDragState(state.workspace, { nodeId: null, offsetX: 0, offsetY: 0 });
       });
     });
     svg.querySelector(".canvas-bg")?.addEventListener("click", (e) => {
@@ -1626,14 +1705,13 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       const scaleY = 400 / rect.height;
       const x = (e.clientX - rect.left) * scaleX - 50;
       const y = (e.clientY - rect.top) * scaleY - 20;
-      state.workspace.sketch = addNode(
-        state.workspace.sketch,
-        state.workspace.selectedNodeType,
+      state.workspace = placeNode(
+        state.workspace,
         state.workspace.selectedNodeType,
         Math.max(0, Math.min(700, x)),
         Math.max(0, Math.min(360, y))
       );
-      refreshWorkspaceAfterSketchChange();
+      syncWorkspaceChrome();
     });
   }
   function renderCanvasEdges(svg) {
@@ -1678,7 +1756,8 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       display.textContent = `${m}:${s.toString().padStart(2, "0")}`;
       if (--remaining < 0) {
         clearInterval(interval);
-        state.workspace.wizard.teachBackCompleted = true;
+        state.workspace = setWizardField(state.workspace, "teachBackCompleted", true);
+        syncWorkspaceChrome();
         display.textContent = "Teach-back complete!";
       }
     }, 1e3);
@@ -1717,12 +1796,13 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       <button class="btn" id="reshsketch">Re-sketch Challenge (Week 1)</button>
     </div>`;
     document.getElementById("reshsketch")?.addEventListener("click", () => {
-      state.workspace.sketch = createSketch("Re-sketch Challenge");
+      state.workspace = resetSketch(state.workspace, "Re-sketch Challenge");
       state.view = "workspace";
       render();
     });
   }
   window.__AAA = {
+    generateMd: () => generateExport(state.workspace.sketch, state.workspace.wizard),
     runExport: async () => {
       const svg = renderSketchSvg(state.workspace.sketch);
       const png = await rasterizeSvgToPng(svg, 800, 400);
@@ -1732,7 +1812,8 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         mdSections: (md.match(/^## \d/gm) || []).length,
         nodes: state.workspace.sketch.nodes.length,
         edges: state.workspace.sketch.edges.length,
-        hasAnnotations: Boolean(state.workspace.sketch.annotations)
+        hasAnnotations: Boolean(state.workspace.sketch.annotations),
+        md
       };
     }
   };

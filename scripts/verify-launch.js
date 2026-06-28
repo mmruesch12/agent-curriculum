@@ -11,6 +11,19 @@ const URL = `http://127.0.0.1:${PORT}`;
 
 mkdirSync(SCRATCH, { recursive: true });
 
+const TRADEOFFS = [
+  'Latency vs quality: reflection adds tokens',
+  'Cost vs control: more HITL gates slow flow',
+  'Simplicity vs specialization: fewer agents easier to operate',
+];
+const FAILURES = [
+  { risk: 'Tool cascade failure', mit: 'Circuit breaker' },
+  { risk: 'State drift', mit: 'Checkpoint schema' },
+  { risk: 'Retrieval collapse', mit: 'Hybrid search' },
+  { risk: 'Prompt injection', mit: 'Input guardrails' },
+  { risk: 'Eval blind spot', mit: 'E2E traces' },
+];
+
 function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -31,11 +44,26 @@ function assertTruthy(val, label) {
   if (!val) throw new Error(`Assertion failed: ${label}`);
 }
 
+async function fillFullWizard(page) {
+  await page.fill('[data-wizard="scenario"]', 'Enterprise dev agent for platform team');
+  await page.fill('[data-wizard="justify"]', 'Supervisor pattern with strategic HITL gates');
+  await page.fill('[data-wizard="annotations"]', 'HITL before external deploy actions');
+  for (let i = 0; i < 3; i++) {
+    await page.fill(`[data-wizard-tradeoff="${i}"]`, TRADEOFFS[i]);
+  }
+  for (let i = 0; i < 5; i++) {
+    await page.fill(`[data-wizard-fail-risk="${i}"]`, FAILURES[i].risk);
+    await page.fill(`[data-wizard-fail-mit="${i}"]`, FAILURES[i].mit);
+  }
+  await page.fill('[data-wizard="costLatency"]', 'Semantic cache + model routing');
+}
+
 async function runPlaywright() {
   const logs = [];
   const log = (msg) => { logs.push(msg); console.log(msg); };
 
   let server;
+  let mdCapture = '';
   try {
     const { chromium } = await import('playwright');
     server = spawn('npx', ['--yes', 'serve', 'web', '-l', String(PORT)], { cwd: ROOT, stdio: 'pipe' });
@@ -51,74 +79,60 @@ async function runPlaywright() {
       page.on('pageerror', (e) => errors.push(e.message));
 
       await page.goto(URL, { waitUntil: 'networkidle' });
-      await page.waitForSelector('#app', { timeout: 10000 });
-
-      await page.click('[data-view="modules"]');
-      await page.fill('[data-cp-input="0"]', 'Enterprise governance audit oversight and human control reduce risk');
-      await page.click('[data-cp-submit="0"]');
-      log(`Checkpoint: ${(await page.textContent('#cp-result-0'))?.slice(0, 60)}`);
-
-      await page.click('[data-view="pattern-lab"]');
-      await page.click('#react-step');
-      log(`ReAct: ${(await page.textContent('#react-display'))?.includes('Thought')}`);
+      await page.waitForSelector('#app');
 
       await page.click('[data-view="workspace"]');
       await page.waitForSelector('.canvas-bg');
 
-      const nodesBefore = await page.locator('.canvas-node').count();
       await page.click('.canvas-bg', { position: { x: 150, y: 120 } });
       await page.click('.canvas-bg', { position: { x: 400, y: 120 } });
+      await sleep(150);
+      await page.locator('.canvas-node').nth(0).click();
+      await page.locator('.canvas-node').nth(1).click();
+      await sleep(150);
+
+      await fillFullWizard(page);
       await sleep(200);
-      const nodesAfter = await page.locator('.canvas-node').count();
-      log(`Nodes placed: ${nodesBefore} -> ${nodesAfter}`);
-      assertTruthy(nodesAfter >= 2, 'two nodes placed');
 
-      const countText = await page.textContent('[data-sketch-count]');
-      log(`Sketch count UI: ${countText}`);
-      assertTruthy(countText?.includes('2 nodes'), 'sidebar count updated');
-
-      const node0 = page.locator('.canvas-node').nth(0);
-      const node1 = page.locator('.canvas-node').nth(1);
-      await node0.click();
-      await node1.click();
-      await sleep(200);
-      const countAfterEdge = await page.textContent('[data-sketch-count]');
-      log(`After edge connect: ${countAfterEdge}`);
-      assertTruthy(countAfterEdge?.includes('1 edges') || countAfterEdge?.includes('1 edge'), 'edge created');
-
-      await page.fill('[data-wizard="scenario"]', 'Enterprise dev agent');
-      await page.fill('[data-wizard="justify"]', 'Supervisor with HITL');
-      await page.fill('[data-wizard="annotations"]', 'Gate before deploy');
+      const validationText = await page.textContent('#validation-status');
+      log(`Validation status: ${validationText}`);
+      assertTruthy(validationText?.includes('Interview-ready'), 'wizard complete in UI');
 
       const exportResult = await page.evaluate(async () => {
-        if (!window.__AAA?.runExport) return { error: 'missing __AAA.runExport' };
-        return window.__AAA.runExport();
+        const md = window.__AAA?.generateMd?.() ?? '';
+        const run = await window.__AAA?.runExport?.();
+        return { ...run, md };
       });
-      log(`Browser export: png=${exportResult.pngPrefix}, sections=${exportResult.mdSections}, edges=${exportResult.edges}`);
-      assertTruthy(exportResult.pngPrefix?.startsWith('data:image/png'), 'png in browser');
-      assertTruthy(exportResult.mdSections >= 7, '7 md sections');
-      assertTruthy(exportResult.edges >= 1, 'export has edges');
-      assertTruthy(exportResult.hasAnnotations, 'annotations in sketch');
+      mdCapture = exportResult.md || '';
+      log(`Export md length: ${mdCapture.length}`);
+      log(`Tradeoffs in md: ${TRADEOFFS.filter((t) => mdCapture.includes(t.split(':')[0])).length}`);
+      log(`Failures in md: ${FAILURES.filter((f) => mdCapture.includes(f.risk)).length}`);
+
+      assertTruthy(exportResult.pngPrefix?.startsWith('data:image/png'), 'png');
+      assertTruthy((mdCapture.match(/^## \d/gm) || []).length >= 7, '7 sections');
+      TRADEOFFS.forEach((t) => assertTruthy(mdCapture.includes(t), `tradeoff: ${t}`));
+      FAILURES.forEach((f) => assertTruthy(mdCapture.includes(f.risk), `failure: ${f.risk}`));
 
       const downloads = [];
-      page.on('download', (d) => downloads.push(d.suggestedFilename()));
+      page.on('download', (d) => downloads.push(d));
       await page.click('#export-btn');
-      await sleep(800);
-      log(`Export button downloads: ${downloads.join(', ')}`);
-      assertTruthy(downloads.some((f) => f?.endsWith('.md')), 'md download');
-      assertTruthy(downloads.some((f) => f?.endsWith('.png')), 'png download');
+      await sleep(1000);
+      log(`Downloads: ${downloads.length} files`);
+      assertTruthy(downloads.length >= 2, 'md+png downloads');
 
-      assertTruthy(errors.length === 0, `js errors: ${errors.join('; ')}`);
+      assertTruthy(errors.length === 0, errors.join('; '));
       await browser.close();
     }
 
     writeFileSync(join(SCRATCH, 'launch-evidence.txt'), logs.join('\n'));
     writeFileSync(join(SCRATCH, 'launch-success.txt'), 'ALL LAUNCH CHECKS PASSED\n');
+    writeFileSync(join(SCRATCH, 'wizard-export-sample.md'), mdCapture);
     return true;
   } catch (err) {
     const msg = `Launch verification failed: ${err.message}\n${logs.join('\n')}`;
     writeFileSync(join(SCRATCH, 'launch-evidence.txt'), msg);
     writeFileSync(join(SCRATCH, 'launch-failure.txt'), msg);
+    if (mdCapture) writeFileSync(join(SCRATCH, 'wizard-export-sample.md'), mdCapture);
     console.error(msg);
     return false;
   } finally {

@@ -79,5 +79,8 @@ WIZARD_STEPS.forEach((step) => {
 if ((md.match(/^## \d/gm) || []).length < 7) throw new Error('Export missing 7 sections');
 if (!svg.includes('xmlns="http://www.w3.org/2000/svg"')) throw new Error('SVG missing xmlns');
 
+lines.push('--- Validation preview ---', `tradeoffs=${wizard.tradeoffs.filter(Boolean).length} failures=${wizard.failures.filter((f) => f.risk).length}`);
+
 writeFileSync(join(SCRATCH, 'sim-and-export.txt'), lines.join('\n'));
+writeFileSync(join(SCRATCH, 'sim-export-full.md'), md);
 console.log(`Wrote sim-and-export.txt (${md.length} chars, ${sketch.edges.length} edges)`);
