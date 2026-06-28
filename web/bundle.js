@@ -331,34 +331,34 @@
     compliance: {
       label: "Compliance policy lookup",
       steps: [
-        { phase: "thought", thought: "I need to find the latest compliance policy for data retention.", action: null, observation: null },
-        { phase: "action", thought: "I need to find the latest compliance policy for data retention.", action: 'search_knowledge_base(query="data retention policy")', observation: null },
-        { phase: "observation", thought: "I need to find the latest compliance policy for data retention.", action: 'search_knowledge_base(query="data retention policy")', observation: "Found 3 documents: Policy v2.1 (2025), GDPR Addendum, Internal Audit Guide." },
-        { phase: "thought", thought: "The policy requires 7-year retention for financial records. I can now answer.", action: null, observation: "Found 3 documents: Policy v2.1 (2025), GDPR Addendum, Internal Audit Guide." },
-        { phase: "action", thought: "The policy requires 7-year retention for financial records. I can now answer.", action: 'respond(answer="Financial records must be retained for 7 years per Policy v2.1.")', observation: null },
-        { phase: "observation", thought: "The policy requires 7-year retention for financial records. I can now answer.", action: 'respond(answer="Financial records must be retained for 7 years per Policy v2.1.")', observation: "Response delivered to user." }
+        { phase: "thought", thought: "I need to find the latest compliance policy for data retention." },
+        { phase: "action", action: 'search_knowledge_base(query="data retention policy")' },
+        { phase: "observation", observation: "Found 3 documents: Policy v2.1 (2025), GDPR Addendum, Internal Audit Guide." },
+        { phase: "thought", thought: "The policy requires 7-year retention for financial records. I can now answer." },
+        { phase: "action", action: 'respond(answer="Financial records must be retained for 7 years per Policy v2.1.")' },
+        { phase: "observation", observation: "Response delivered to user." }
       ]
     },
     incident: {
       label: "Incident triage",
       steps: [
-        { phase: "thought", thought: "User reports API latency spike in production region us-east-1.", action: null, observation: null },
-        { phase: "action", thought: "User reports API latency spike in production region us-east-1.", action: 'query_metrics(service="payments-api", region="us-east-1", window="15m")', observation: null },
-        { phase: "observation", thought: "User reports API latency spike in production region us-east-1.", action: 'query_metrics(service="payments-api", region="us-east-1", window="15m")', observation: "p99 latency 4.2s (baseline 180ms). Error rate 12%." },
-        { phase: "thought", thought: "Correlate with recent deploys and dependency health.", action: null, observation: "p99 latency 4.2s (baseline 180ms). Error rate 12%." },
-        { phase: "action", thought: "Correlate with recent deploys and dependency health.", action: 'check_deployments(service="payments-api", hours=2)', observation: null },
-        { phase: "observation", thought: "Correlate with recent deploys and dependency health.", action: 'check_deployments(service="payments-api", hours=2)', observation: "Deploy v3.14.2 rolled out 22m ago. Auth service dependency degraded." }
+        { phase: "thought", thought: "User reports API latency spike in production region us-east-1." },
+        { phase: "action", action: 'query_metrics(service="payments-api", region="us-east-1", window="15m")' },
+        { phase: "observation", observation: "p99 latency 4.2s (baseline 180ms). Error rate 12%." },
+        { phase: "thought", thought: "Correlate with recent deploys and dependency health." },
+        { phase: "action", action: 'check_deployments(service="payments-api", hours=2)' },
+        { phase: "observation", observation: "Deploy v3.14.2 rolled out 22m ago. Auth service dependency degraded." }
       ]
     },
     code_review: {
       label: "Code review assistant",
       steps: [
-        { phase: "thought", thought: "Review PR #482 for security and correctness in auth middleware.", action: null, observation: null },
-        { phase: "action", thought: "Review PR #482 for security and correctness in auth middleware.", action: 'fetch_diff(pr=482, paths=["src/auth/*"])', observation: null },
-        { phase: "observation", thought: "Review PR #482 for security and correctness in auth middleware.", action: 'fetch_diff(pr=482, paths=["src/auth/*"])', observation: "Diff shows new JWT validation but missing rate limiting on token refresh." },
-        { phase: "thought", thought: "Flag missing rate limit and suggest test coverage.", action: null, observation: "Diff shows new JWT validation but missing rate limiting on token refresh." },
-        { phase: "action", thought: "Flag missing rate limit and suggest test coverage.", action: 'post_review(comment="Add rate limit on refresh endpoint; include negative test for expired tokens")', observation: null },
-        { phase: "observation", thought: "Flag missing rate limit and suggest test coverage.", action: 'post_review(comment="Add rate limit on refresh endpoint; include negative test for expired tokens")', observation: "Review comment posted. CI triggered." }
+        { phase: "thought", thought: "Review PR #482 for security and correctness in auth middleware." },
+        { phase: "action", action: 'fetch_diff(pr=482, paths=["src/auth/*"])' },
+        { phase: "observation", observation: "Diff shows new JWT validation but missing rate limiting on token refresh." },
+        { phase: "thought", thought: "Flag missing rate limit and suggest test coverage." },
+        { phase: "action", action: 'post_review(comment="Add rate limit on refresh endpoint; include negative test for expired tokens")' },
+        { phase: "observation", observation: "Review comment posted. CI triggered." }
       ]
     }
   };
@@ -421,7 +421,7 @@
           state: newState2,
           entry: entry2,
           display: entry2.text,
-          metrics: { latency: 1.4, cost: 0.08, quality: 0.92 }
+          metrics: { latency: 1.4, cost: 0.08, quality: 0.92, phase: "reflection", scenario: state2.scenarioId }
         };
       }
       return { state: { ...state2, complete: true }, entry: null, display: "Simulation complete.", metrics: null };
@@ -450,16 +450,17 @@
     };
   }
   function formatReactEntry(raw) {
-    const parts = [];
-    if (raw.thought) parts.push(`Thought: ${raw.thought}`);
-    if (raw.action) parts.push(`Action: ${raw.action}`);
-    if (raw.observation) parts.push(`Observation: ${raw.observation}`);
-    if (raw.phase === "reflection") {
-      parts.push(`Reflection: ${raw.thought}`);
+    let text = "";
+    if (raw.phase === "thought" && raw.thought) text = `Thought: ${raw.thought}`;
+    else if (raw.phase === "action" && raw.action) text = `Action: ${raw.action}`;
+    else if (raw.phase === "observation" && raw.observation) text = `Observation: ${raw.observation}`;
+    else if (raw.phase === "reflection") {
+      const parts = [`Reflection: ${raw.thought}`];
       if (raw.action) parts.push(`Action: ${raw.action}`);
       if (raw.observation) parts.push(`Observation: ${raw.observation}`);
+      text = parts.join("\n");
     }
-    return { phase: raw.phase, text: parts.join("\n"), parts };
+    return { phase: raw.phase, text, parts: raw };
   }
 
   // web/js/core/topology-simulator.js
@@ -692,6 +693,40 @@
   }
   function resetLangGraph() {
     return { stepIndex: 0, currentNode: "start", complete: false, awaitingBranch: false, path: [] };
+  }
+  function getLangGraphDisplay(state2) {
+    const view = getLangGraphView();
+    if (state2.complete) {
+      return { activeNode: "end", message: "Graph execution complete.", branches: [] };
+    }
+    const current = state2.currentNode || "start";
+    const node = view.nodes.find((n) => n.id === current);
+    const branches = getLangGraphBranches(current);
+    if (state2.awaitingBranch && branches.length > 0) {
+      return {
+        activeNode: current,
+        message: `At ${node.label}: choose branch \u2014 ${branches.map((b) => b.label).join(" or ")}`,
+        branches,
+        isPersistence: node?.type === "persistence",
+        isInterrupt: node?.type === "interrupt"
+      };
+    }
+    if (current === "start" && !state2.path?.length) {
+      return {
+        activeNode: "start",
+        message: "Ready \u2014 press Step Graph to begin at START",
+        branches: [],
+        isPersistence: false,
+        isInterrupt: false
+      };
+    }
+    return {
+      activeNode: current,
+      message: `At ${node.label}${node.highlight ? " [highlighted]" : ""}`,
+      branches,
+      isPersistence: node?.type === "persistence",
+      isInterrupt: node?.type === "interrupt"
+    };
   }
 
   // web/js/core/rag-simulator.js
@@ -1801,20 +1836,20 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
   }
   function renderLangGraphSim(el) {
     const view = getLangGraphView();
-    const step = stepLangGraph(state.langgraph);
+    const display = getLangGraphDisplay(state.langgraph);
     el.innerHTML = `
     <div class="glass-card">
       <h3>LangGraph State Viewer</h3>
       <p>${escapeHtml(view.description)}</p>
       <svg width="100%" height="120" aria-label="LangGraph">
-        ${view.nodes.map((n, i) => `<g class="graph-node ${n.id === step.activeNode ? "active" : ""} ${n.type === "persistence" ? "persistence" : ""} ${n.type === "interrupt" ? "interrupt" : ""}">
+        ${view.nodes.map((n, i) => `<g class="graph-node ${n.id === display.activeNode ? "active" : ""} ${n.type === "persistence" ? "persistence" : ""} ${n.type === "interrupt" ? "interrupt" : ""}">
           <rect x="${i * 90 + 10}" y="40" width="70" height="40" rx="6" fill="#1a2332" stroke="${n.highlight ? "#f59e0b" : "#6366f1"}"/>
           <text x="${i * 90 + 45}" y="65" text-anchor="middle" fill="white" font-size="9">${escapeHtml(n.label)}</text>
         </g>`).join("")}
       </svg>
-      <div class="sim-display" aria-live="polite">${escapeHtml(step.message || "Ready")}</div>
-      ${step.branches?.length ? `<div class="branch-group" role="group" aria-label="Branch choices">
-        ${step.branches.map((b) => `<button class="btn btn-sm btn-secondary" data-branch="${b.branch}">${escapeHtml(b.label)}</button>`).join("")}
+      <div class="sim-display" id="lg-display" aria-live="polite">${escapeHtml(display.message || "Ready")}</div>
+      ${display.branches?.length ? `<div class="branch-group" role="group" aria-label="Branch choices">
+        ${display.branches.map((b) => `<button class="btn btn-sm btn-secondary" data-branch="${b.branch}">${escapeHtml(b.label)}</button>`).join("")}
       </div>` : ""}
       <button class="btn" id="lg-step">Step Graph</button>
       <button class="btn btn-secondary" id="lg-reset">Reset</button>

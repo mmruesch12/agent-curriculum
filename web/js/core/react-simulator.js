@@ -2,34 +2,34 @@ const SCENARIOS = {
   compliance: {
     label: 'Compliance policy lookup',
     steps: [
-      { phase: 'thought', thought: 'I need to find the latest compliance policy for data retention.', action: null, observation: null },
-      { phase: 'action', thought: 'I need to find the latest compliance policy for data retention.', action: 'search_knowledge_base(query="data retention policy")', observation: null },
-      { phase: 'observation', thought: 'I need to find the latest compliance policy for data retention.', action: 'search_knowledge_base(query="data retention policy")', observation: 'Found 3 documents: Policy v2.1 (2025), GDPR Addendum, Internal Audit Guide.' },
-      { phase: 'thought', thought: 'The policy requires 7-year retention for financial records. I can now answer.', action: null, observation: 'Found 3 documents: Policy v2.1 (2025), GDPR Addendum, Internal Audit Guide.' },
-      { phase: 'action', thought: 'The policy requires 7-year retention for financial records. I can now answer.', action: 'respond(answer="Financial records must be retained for 7 years per Policy v2.1.")', observation: null },
-      { phase: 'observation', thought: 'The policy requires 7-year retention for financial records. I can now answer.', action: 'respond(answer="Financial records must be retained for 7 years per Policy v2.1.")', observation: 'Response delivered to user.' },
+      { phase: 'thought', thought: 'I need to find the latest compliance policy for data retention.' },
+      { phase: 'action', action: 'search_knowledge_base(query="data retention policy")' },
+      { phase: 'observation', observation: 'Found 3 documents: Policy v2.1 (2025), GDPR Addendum, Internal Audit Guide.' },
+      { phase: 'thought', thought: 'The policy requires 7-year retention for financial records. I can now answer.' },
+      { phase: 'action', action: 'respond(answer="Financial records must be retained for 7 years per Policy v2.1.")' },
+      { phase: 'observation', observation: 'Response delivered to user.' },
     ],
   },
   incident: {
     label: 'Incident triage',
     steps: [
-      { phase: 'thought', thought: 'User reports API latency spike in production region us-east-1.', action: null, observation: null },
-      { phase: 'action', thought: 'User reports API latency spike in production region us-east-1.', action: 'query_metrics(service="payments-api", region="us-east-1", window="15m")', observation: null },
-      { phase: 'observation', thought: 'User reports API latency spike in production region us-east-1.', action: 'query_metrics(service="payments-api", region="us-east-1", window="15m")', observation: 'p99 latency 4.2s (baseline 180ms). Error rate 12%.' },
-      { phase: 'thought', thought: 'Correlate with recent deploys and dependency health.', action: null, observation: 'p99 latency 4.2s (baseline 180ms). Error rate 12%.' },
-      { phase: 'action', thought: 'Correlate with recent deploys and dependency health.', action: 'check_deployments(service="payments-api", hours=2)', observation: null },
-      { phase: 'observation', thought: 'Correlate with recent deploys and dependency health.', action: 'check_deployments(service="payments-api", hours=2)', observation: 'Deploy v3.14.2 rolled out 22m ago. Auth service dependency degraded.' },
+      { phase: 'thought', thought: 'User reports API latency spike in production region us-east-1.' },
+      { phase: 'action', action: 'query_metrics(service="payments-api", region="us-east-1", window="15m")' },
+      { phase: 'observation', observation: 'p99 latency 4.2s (baseline 180ms). Error rate 12%.' },
+      { phase: 'thought', thought: 'Correlate with recent deploys and dependency health.' },
+      { phase: 'action', action: 'check_deployments(service="payments-api", hours=2)' },
+      { phase: 'observation', observation: 'Deploy v3.14.2 rolled out 22m ago. Auth service dependency degraded.' },
     ],
   },
   code_review: {
     label: 'Code review assistant',
     steps: [
-      { phase: 'thought', thought: 'Review PR #482 for security and correctness in auth middleware.', action: null, observation: null },
-      { phase: 'action', thought: 'Review PR #482 for security and correctness in auth middleware.', action: 'fetch_diff(pr=482, paths=["src/auth/*"])', observation: null },
-      { phase: 'observation', thought: 'Review PR #482 for security and correctness in auth middleware.', action: 'fetch_diff(pr=482, paths=["src/auth/*"])', observation: 'Diff shows new JWT validation but missing rate limiting on token refresh.' },
-      { phase: 'thought', thought: 'Flag missing rate limit and suggest test coverage.', action: null, observation: 'Diff shows new JWT validation but missing rate limiting on token refresh.' },
-      { phase: 'action', thought: 'Flag missing rate limit and suggest test coverage.', action: 'post_review(comment="Add rate limit on refresh endpoint; include negative test for expired tokens")', observation: null },
-      { phase: 'observation', thought: 'Flag missing rate limit and suggest test coverage.', action: 'post_review(comment="Add rate limit on refresh endpoint; include negative test for expired tokens")', observation: 'Review comment posted. CI triggered.' },
+      { phase: 'thought', thought: 'Review PR #482 for security and correctness in auth middleware.' },
+      { phase: 'action', action: 'fetch_diff(pr=482, paths=["src/auth/*"])' },
+      { phase: 'observation', observation: 'Diff shows new JWT validation but missing rate limiting on token refresh.' },
+      { phase: 'thought', thought: 'Flag missing rate limit and suggest test coverage.' },
+      { phase: 'action', action: 'post_review(comment="Add rate limit on refresh endpoint; include negative test for expired tokens")' },
+      { phase: 'observation', observation: 'Review comment posted. CI triggered.' },
     ],
   },
 };
@@ -101,7 +101,7 @@ export function reactStep(currentState, action = 'advance', payload = null) {
         state: newState,
         entry,
         display: entry.text,
-        metrics: { latency: 1.4, cost: 0.08, quality: 0.92 },
+        metrics: { latency: 1.4, cost: 0.08, quality: 0.92, phase: 'reflection', scenario: state.scenarioId },
       };
     }
     return { state: { ...state, complete: true }, entry: null, display: 'Simulation complete.', metrics: null };
@@ -137,16 +137,17 @@ export function toggleReflection(state, enabled) {
 }
 
 function formatReactEntry(raw) {
-  const parts = [];
-  if (raw.thought) parts.push(`Thought: ${raw.thought}`);
-  if (raw.action) parts.push(`Action: ${raw.action}`);
-  if (raw.observation) parts.push(`Observation: ${raw.observation}`);
-  if (raw.phase === 'reflection') {
-    parts.push(`Reflection: ${raw.thought}`);
+  let text = '';
+  if (raw.phase === 'thought' && raw.thought) text = `Thought: ${raw.thought}`;
+  else if (raw.phase === 'action' && raw.action) text = `Action: ${raw.action}`;
+  else if (raw.phase === 'observation' && raw.observation) text = `Observation: ${raw.observation}`;
+  else if (raw.phase === 'reflection') {
+    const parts = [`Reflection: ${raw.thought}`];
     if (raw.action) parts.push(`Action: ${raw.action}`);
     if (raw.observation) parts.push(`Observation: ${raw.observation}`);
+    text = parts.join('\n');
   }
-  return { phase: raw.phase, text: parts.join('\n'), parts };
+  return { phase: raw.phase, text, parts: raw };
 }
 
 export function getReactScenarioLength(scenarioId = 'compliance') {

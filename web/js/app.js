@@ -1,7 +1,7 @@
 import { MODULES, CAPSTONES, TIMELINE, RESOURCES, WIZARD_STEPS, NODE_TYPES } from './data/curriculum.js';
 import { createReactState, reactStep, toggleReflection, getReactScenarios } from './core/react-simulator.js';
 import { switchTopology, getTopologyModes } from './core/topology-simulator.js';
-import { getLangGraphView, stepLangGraph, resetLangGraph } from './core/langgraph-simulator.js';
+import { getLangGraphView, stepLangGraph, resetLangGraph, getLangGraphDisplay } from './core/langgraph-simulator.js';
 import { simulateRagCascade, getRagModes, getRagFailurePoints } from './core/rag-simulator.js';
 import { createTimelineState, advanceTimeline, simulateCrash, simulateResume, getPhases } from './core/checkpoint-timeline.js';
 import { getTrace, selectSpan, injectFailureMode, createTraceState, getFailureModes } from './core/trace-simulator.js';
@@ -368,20 +368,20 @@ function renderTopologySim(el) {
 
 function renderLangGraphSim(el) {
   const view = getLangGraphView();
-  const step = stepLangGraph(state.langgraph);
+  const display = getLangGraphDisplay(state.langgraph);
   el.innerHTML = `
     <div class="glass-card">
       <h3>LangGraph State Viewer</h3>
       <p>${escapeHtml(view.description)}</p>
       <svg width="100%" height="120" aria-label="LangGraph">
-        ${view.nodes.map((n, i) => `<g class="graph-node ${n.id === step.activeNode ? 'active' : ''} ${n.type === 'persistence' ? 'persistence' : ''} ${n.type === 'interrupt' ? 'interrupt' : ''}">
+        ${view.nodes.map((n, i) => `<g class="graph-node ${n.id === display.activeNode ? 'active' : ''} ${n.type === 'persistence' ? 'persistence' : ''} ${n.type === 'interrupt' ? 'interrupt' : ''}">
           <rect x="${i * 90 + 10}" y="40" width="70" height="40" rx="6" fill="#1a2332" stroke="${n.highlight ? '#f59e0b' : '#6366f1'}"/>
           <text x="${i * 90 + 45}" y="65" text-anchor="middle" fill="white" font-size="9">${escapeHtml(n.label)}</text>
         </g>`).join('')}
       </svg>
-      <div class="sim-display" aria-live="polite">${escapeHtml(step.message || 'Ready')}</div>
-      ${step.branches?.length ? `<div class="branch-group" role="group" aria-label="Branch choices">
-        ${step.branches.map((b) => `<button class="btn btn-sm btn-secondary" data-branch="${b.branch}">${escapeHtml(b.label)}</button>`).join('')}
+      <div class="sim-display" id="lg-display" aria-live="polite">${escapeHtml(display.message || 'Ready')}</div>
+      ${display.branches?.length ? `<div class="branch-group" role="group" aria-label="Branch choices">
+        ${display.branches.map((b) => `<button class="btn btn-sm btn-secondary" data-branch="${b.branch}">${escapeHtml(b.label)}</button>`).join('')}
       </div>` : ''}
       <button class="btn" id="lg-step">Step Graph</button>
       <button class="btn btn-secondary" id="lg-reset">Reset</button>

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { createReactState, reactStep, toggleReflection, getReactScenarios } from '../web/js/core/react-simulator.js';
 import { switchTopology, getTopologyModes, computeTopologyLayout } from '../web/js/core/topology-simulator.js';
-import { getLangGraphView, stepLangGraph, resetLangGraph, getLangGraphBranches } from '../web/js/core/langgraph-simulator.js';
+import { getLangGraphView, stepLangGraph, resetLangGraph, getLangGraphBranches, getLangGraphDisplay } from '../web/js/core/langgraph-simulator.js';
 import { simulateRagCascade, getRagModes, getRagFailurePoints } from '../web/js/core/rag-simulator.js';
 import { createTimelineState, advanceTimeline, simulateCrash, simulateResume } from '../web/js/core/checkpoint-timeline.js';
 import { getTrace, selectSpan, injectFailureMode, createTraceState, getFailureModes } from '../web/js/core/trace-simulator.js';
@@ -46,7 +46,7 @@ describe('ReAct simulator', () => {
     assert.equal(JSON.stringify(s), frozen);
   });
 
-  it('supports reset and scenario switching', () => {
+  it('supports reset and scenario switching with phase-distinct step text', () => {
     let s = createReactState(true);
     s = reactStep(s, 'advance').state;
     s = reactStep(s, 'reset').state;
@@ -57,6 +57,17 @@ describe('ReAct simulator', () => {
     const switched = reactStep(s, 'setScenario', 'incident');
     assert.equal(switched.state.scenarioId, 'incident');
     assert.match(switched.display, /Incident/);
+    let incident = createReactState(false, 'incident');
+    const phases = [];
+    for (let i = 0; i < 6; i++) {
+      const r = reactStep(incident, 'advance');
+      incident = r.state;
+      phases.push(r.entry.phase);
+      if (r.entry.phase === 'thought') assert.match(r.entry.text, /^Thought:/);
+      if (r.entry.phase === 'action') assert.match(r.entry.text, /^Action:/);
+      if (r.entry.phase === 'observation') assert.match(r.entry.text, /^Observation:/);
+    }
+    assert.deepEqual(phases, ['thought', 'action', 'observation', 'thought', 'action', 'observation']);
   });
 });
 
@@ -81,14 +92,26 @@ describe('Topology simulator', () => {
 });
 
 describe('LangGraph simulator', () => {
-  it('highlights persistence and interrupt nodes', () => {
+  it('getLangGraphDisplay does not advance state on read', () => {
     const view = getLangGraphView();
     assert.ok(view.highlights.persistence.includes('checkpoint'));
     assert.ok(view.highlights.interrupts.includes('hitl'));
+    const s = resetLangGraph();
+    const display = getLangGraphDisplay(s);
+    assert.equal(display.activeNode, 'start');
+    assert.match(display.message, /START/);
+    assert.equal(s.currentNode, 'start');
+    assert.equal(s.stepIndex, 0);
+  });
+
+  it('stepLangGraph advances only on explicit step', () => {
     let s = resetLangGraph();
     const r = stepLangGraph(s);
     assert.equal(r.activeNode, 'plan');
     assert.ok(r.message.includes('Plan'));
+    s = r.state;
+    const still = getLangGraphDisplay(s);
+    assert.equal(still.activeNode, 'plan');
   });
 
   it('offers branch choices at conditional nodes', () => {

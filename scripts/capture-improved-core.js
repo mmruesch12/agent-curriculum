@@ -24,9 +24,15 @@ lines.push(`PASS: keywords=${pass.matchedKeywords.length} words=${pass.metrics.w
 lines.push(`FAIL: ${fail.feedback.slice(0, 120)}`);
 
 let react = createReactState(false, 'incident');
-for (let i = 0; i < 3; i++) react = reactStep(react, 'advance').state;
-lines.push('--- ReAct incident scenario ---');
-lines.push(react.steps.map((s) => s.text.split('\n')[0]).join(' | '));
+const phaseLog = [];
+for (let i = 0; i < 6; i++) {
+  const r = reactStep(react, 'advance');
+  react = r.state;
+  phaseLog.push(`${r.entry.phase}:${r.entry.text.slice(0, 40)}`);
+}
+lines.push('--- ReAct incident scenario (full cycle) ---');
+lines.push(phaseLog.join(' | '));
+assertPhases(phaseLog);
 
 const topo = switchTopology('handoffs');
 lines.push('--- Topology layout ---');
@@ -44,3 +50,17 @@ lines.push(inj.message);
 
 writeFileSync(join(SCRATCH, 'improved-core.txt'), lines.join('\n'));
 console.log('Wrote improved-core.txt');
+
+function assertPhases(log) {
+  const phases = log.map((l) => l.split(':')[0]);
+  const expected = ['thought', 'action', 'observation', 'thought', 'action', 'observation'];
+  if (JSON.stringify(phases) !== JSON.stringify(expected)) {
+    throw new Error(`ReAct phases mismatch: ${phases.join(',')}`);
+  }
+  if (!log.some((l) => l.startsWith('action:Action: query_metrics'))) {
+    throw new Error('ReAct missing action phase content');
+  }
+  if (!log.some((l) => l.startsWith('observation:Observation: p99'))) {
+    throw new Error('ReAct missing observation phase content');
+  }
+}

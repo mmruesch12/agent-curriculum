@@ -94,3 +94,43 @@ export function stepLangGraph(state, branchChoice = null) {
 export function resetLangGraph() {
   return { stepIndex: 0, currentNode: 'start', complete: false, awaitingBranch: false, path: [] };
 }
+
+/** Read-only view of current graph position — does not advance state. */
+export function getLangGraphDisplay(state) {
+  const view = getLangGraphView();
+  if (state.complete) {
+    return { activeNode: 'end', message: 'Graph execution complete.', branches: [] };
+  }
+
+  const current = state.currentNode || 'start';
+  const node = view.nodes.find((n) => n.id === current);
+  const branches = getLangGraphBranches(current);
+
+  if (state.awaitingBranch && branches.length > 0) {
+    return {
+      activeNode: current,
+      message: `At ${node.label}: choose branch — ${branches.map((b) => b.label).join(' or ')}`,
+      branches,
+      isPersistence: node?.type === 'persistence',
+      isInterrupt: node?.type === 'interrupt',
+    };
+  }
+
+  if (current === 'start' && !(state.path?.length)) {
+    return {
+      activeNode: 'start',
+      message: 'Ready — press Step Graph to begin at START',
+      branches: [],
+      isPersistence: false,
+      isInterrupt: false,
+    };
+  }
+
+  return {
+    activeNode: current,
+    message: `At ${node.label}${node.highlight ? ' [highlighted]' : ''}`,
+    branches,
+    isPersistence: node?.type === 'persistence',
+    isInterrupt: node?.type === 'interrupt',
+  };
+}
