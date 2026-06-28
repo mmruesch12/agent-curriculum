@@ -54,15 +54,38 @@ export function createReactState(reflectionEnabled = false) {
   };
 }
 
-export function reactStep(state) {
+/** @param {object} currentState @param {'advance'|'reset'} [action] */
+export function reactStep(currentState, action = 'advance') {
+  if (action === 'reset') {
+    return {
+      state: createReactState(currentState.reflectionEnabled),
+      entry: null,
+      display: 'Simulation reset.',
+      metrics: null,
+    };
+  }
+
+  const state = {
+    stepIndex: currentState.stepIndex,
+    reflectionEnabled: currentState.reflectionEnabled,
+    reflectionApplied: currentState.reflectionApplied,
+    complete: currentState.complete,
+    steps: [...currentState.steps],
+  };
+
   const steps = [...REACT_SCENARIO];
+
   if (state.stepIndex >= steps.length) {
     if (state.reflectionEnabled && !state.reflectionApplied) {
-      state.reflectionApplied = true;
       const entry = formatReactEntry(REFLECTION_ADDENDUM);
-      state.steps.push(entry);
+      const newState = {
+        ...state,
+        reflectionApplied: true,
+        steps: [...state.steps, entry],
+        complete: true,
+      };
       return {
-        state: { ...state, complete: true },
+        state: newState,
         entry,
         display: entry.text,
         metrics: { latency: 1.4, cost: 0.08, quality: 0.92 },
@@ -77,7 +100,9 @@ export function reactStep(state) {
     ...state,
     stepIndex: state.stepIndex + 1,
     steps: [...state.steps, entry],
-    complete: state.stepIndex + 1 >= steps.length && (!state.reflectionEnabled || state.reflectionApplied),
+    complete:
+      state.stepIndex + 1 >= steps.length &&
+      (!state.reflectionEnabled || state.reflectionApplied),
   };
 
   const metrics = {

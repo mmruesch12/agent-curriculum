@@ -9,9 +9,9 @@ import { createTimelineState, advanceTimeline, simulateCrash, simulateResume } f
 import { getTrace, getFailureModes } from '../web/js/core/trace-simulator.js';
 import { createHitlState, placeHitlGate } from '../web/js/core/hitl-simulator.js';
 import { getIntegrationDiff } from '../web/js/core/integration-simulator.js';
-import { createSketch, addNode, addEdge, compareSketches } from '../web/js/core/sketch-model.js';
+import { createSketch, addNode, addEdge, compareSketches, moveNode, setAnnotations } from '../web/js/core/sketch-model.js';
 import { validateSketch } from '../web/js/core/validators.js';
-import { generateExport } from '../web/js/core/export.js';
+import { generateExport, rasterizeSvgToPng, svgToDataUrl } from '../web/js/core/export.js';
 import { createDefaultProgress, computeModuleRings, computeReviewItems } from '../web/js/core/progress.js';
 import { evaluateCheckpoint } from '../web/js/core/checkpoints.js';
 import { MODULES, CAPSTONES, WIZARD_STEPS } from '../web/js/data/curriculum.js';
@@ -21,7 +21,7 @@ describe('ReAct simulator', () => {
     let s = createReactState(false);
     const texts = [];
     for (let i = 0; i < 6; i++) {
-      const r = reactStep(s);
+      const r = reactStep(s, 'advance');
       s = r.state;
       if (r.entry) texts.push(r.entry.text);
     }
@@ -33,9 +33,24 @@ describe('ReAct simulator', () => {
 
   it('adds reflection output when enabled', () => {
     let s = toggleReflection(createReactState(false), true);
-    for (let i = 0; i < 8; i++) s = reactStep(s).state;
+    for (let i = 0; i < 8; i++) s = reactStep(s, 'advance').state;
     const last = s.steps[s.steps.length - 1];
     assert.match(last.text, /Reflection:/);
+  });
+
+  it('does not mutate input state', () => {
+    const s = createReactState(false);
+    const frozen = JSON.stringify(s);
+    reactStep(s, 'advance');
+    assert.equal(JSON.stringify(s), frozen);
+  });
+
+  it('supports reset action', () => {
+    let s = createReactState(true);
+    s = reactStep(s, 'advance').state;
+    s = reactStep(s, 'reset').state;
+    assert.equal(s.stepIndex, 0);
+    assert.equal(s.steps.length, 0);
   });
 });
 
@@ -104,12 +119,15 @@ describe('Integration diff', () => {
 });
 
 describe('Sketch model and validators', () => {
-  it('supports named node types', () => {
+  it('supports named node types, move, and annotations', () => {
     let sketch = createSketch('Test');
     sketch = addNode(sketch, 'Agent', 'Main Agent', 100, 100);
     sketch = addNode(sketch, 'HITL', 'Approval', 200, 100);
     sketch = addEdge(sketch, sketch.nodes[0].id, sketch.nodes[1].id, 'approve');
-    assert.equal(sketch.nodes.length, 2);
+    sketch = moveNode(sketch, sketch.nodes[0].id, 150, 120);
+    sketch = setAnnotations(sketch, 'HITL before external tool calls');
+    assert.equal(sketch.nodes[0].x, 150);
+    assert.match(sketch.annotations, /HITL/);
     const diff = compareSketches(sketch, createSketch('Empty'));
     assert.ok(diff.missingInB.length > 0);
   });
@@ -133,6 +151,25 @@ describe('Sketch model and validators', () => {
 });
 
 describe('Export generator', () => {
+  it('rasterizes SVG to PNG data URL with DOM shim', async () => {
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>';
+    const mockEnv = {
+      Image: class {
+        set src(v) { this._src = v; setTimeout(() => this.onload?.(), 0); }
+      },
+      document: {
+        createElement: () => ({
+          width: 0, height: 0,
+          getContext: () => ({ fillStyle: '', fillRect() {}, drawImage() {} }),
+          toDataURL: (fmt) => `data:${fmt};base64,abc`,
+        }),
+      },
+    };
+    const png = await rasterizeSvgToPng(svg, 10, 10, mockEnv);
+    assert.match(png, /^data:image\/png/);
+    assert.match(svgToDataUrl(svg), /^data:image\/svg\+xml/);
+  });
+
   it('emits 7 structured sections', () => {
     const sketch = CAPSTONES[0];
     const wizard = {

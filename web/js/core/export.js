@@ -30,3 +30,30 @@ export function svgToDataUrl(svgString) {
   const encoded = encodeURIComponent(svgString).replace(/'/g, '%27').replace(/"/g, '%22');
   return `data:image/svg+xml,${encoded}`;
 }
+
+/**
+ * Rasterize SVG to PNG data URL. Accepts optional env for testing (Image, document).
+ */
+export function rasterizeSvgToPng(svgString, width = 800, height = 400, env = globalThis) {
+  const ImageCtor = env.Image;
+  const doc = env.document;
+  if (!ImageCtor || !doc) {
+    throw new Error('DOM Image and document required for PNG rasterization');
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = new ImageCtor();
+    img.onload = () => {
+      const canvas = doc.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.fillStyle = '#0a0e14';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load SVG for PNG rasterization'));
+    img.src = svgToDataUrl(svgString);
+  });
+}

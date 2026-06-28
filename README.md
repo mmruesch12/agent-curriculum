@@ -5,15 +5,16 @@ Interactive client-side web app for the **Production Enterprise AI Agents** inte
 ## Quick start
 
 ```bash
-# Run unit tests
+npm install
+npm run build    # bundle.js for file:// and zero-config static hosting
 npm test
 
 # Serve locally
 npx serve web -l 3456
 # Open http://localhost:3456
 
-# Full verification (tests + launch + static inspection)
-npm test && node scripts/verify-static.js && node scripts/verify-sim-export.js && npm run verify:launch
+# Full verification
+npm run verify:all
 ```
 
 ## Features

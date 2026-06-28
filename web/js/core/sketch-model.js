@@ -20,6 +20,17 @@ export function addNode(sketch, type, label, x, y) {
   };
 }
 
+export function moveNode(sketch, nodeId, x, y) {
+  return {
+    ...sketch,
+    nodes: sketch.nodes.map((n) => (n.id === nodeId ? { ...n, x, y } : n)),
+  };
+}
+
+export function setAnnotations(sketch, annotations) {
+  return { ...sketch, annotations };
+}
+
 export function addEdge(sketch, fromId, toId, label = '') {
   return {
     ...sketch,
