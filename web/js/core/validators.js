@@ -36,10 +36,12 @@ export function validateSketch(sketch, wizardData) {
   const wizard = validateWizard(wizardData);
   const nodeErrors = [];
   if (!sketch.nodes.length) nodeErrors.push('Sketch must have at least one node');
+  const errors = [...wizard.errors, ...nodeErrors];
   return {
     ...wizard,
+    complete: wizard.complete && nodeErrors.length === 0,
     sketchValid: nodeErrors.length === 0,
-    errors: [...wizard.errors, ...nodeErrors],
+    errors,
   };
 }
 

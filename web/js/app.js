@@ -16,13 +16,13 @@ import {
   loadCapstone,
   resetSketch,
   setSelectedNodeType,
-  setWizardField,
   placeNode,
   moveNodeOnCanvas,
   selectNodeForEdge,
   setDragState,
   saveCompareSketch,
 } from './core/workspace-controller.js';
+import { applyWizardInput, getWorkspaceChromeState } from './core/workspace-shell.js';
 import { loadProgress, saveProgress, recordActivity, markModuleComplete, computeModuleRings, computeReviewItems } from './core/progress.js';
 import { evaluateCheckpoint } from './core/checkpoints.js';
 
@@ -446,36 +446,51 @@ function renderWizardField(step, i, w) {
   return `<div class="wizard-step"><label>${step}</label><p>Use the timer button below.</p></div>`;
 }
 
-function applyWizardInput(key, value) {
-  state.workspace = setWizardField(state.workspace, key, value);
-  syncWorkspaceChrome();
-}
-
 function bindWizardInputs() {
-  main.querySelector('[data-wizard="scenario"]')?.addEventListener('input', (e) => applyWizardInput('scenario', e.target.value));
-  main.querySelector('[data-wizard="justify"]')?.addEventListener('input', (e) => applyWizardInput('justify', e.target.value));
-  main.querySelector('[data-wizard="costLatency"]')?.addEventListener('input', (e) => applyWizardInput('costLatency', e.target.value));
-  main.querySelector('[data-wizard="annotations"]')?.addEventListener('input', (e) => applyWizardInput('annotations', e.target.value));
+  main.querySelector('[data-wizard="scenario"]')?.addEventListener('input', (e) => {
+    state.workspace = applyWizardInput(state.workspace, 'scenario', e.target.value);
+    syncWorkspaceChrome();
+  });
+  main.querySelector('[data-wizard="justify"]')?.addEventListener('input', (e) => {
+    state.workspace = applyWizardInput(state.workspace, 'justify', e.target.value);
+    syncWorkspaceChrome();
+  });
+  main.querySelector('[data-wizard="costLatency"]')?.addEventListener('input', (e) => {
+    state.workspace = applyWizardInput(state.workspace, 'costLatency', e.target.value);
+    syncWorkspaceChrome();
+  });
+  main.querySelector('[data-wizard="annotations"]')?.addEventListener('input', (e) => {
+    state.workspace = applyWizardInput(state.workspace, 'annotations', e.target.value);
+    syncWorkspaceChrome();
+  });
   main.querySelectorAll('[data-wizard-tradeoff]').forEach((el) => {
-    el.addEventListener('input', (e) => applyWizardInput(`tradeoff:${el.dataset.wizardTradeoff}`, e.target.value));
+    el.addEventListener('input', (e) => {
+      state.workspace = applyWizardInput(state.workspace, `tradeoff:${el.dataset.wizardTradeoff}`, e.target.value);
+      syncWorkspaceChrome();
+    });
   });
   main.querySelectorAll('[data-wizard-fail-risk]').forEach((el) => {
-    el.addEventListener('input', (e) => applyWizardInput(`fail-risk:${el.dataset.wizardFailRisk}`, e.target.value));
+    el.addEventListener('input', (e) => {
+      state.workspace = applyWizardInput(state.workspace, `fail-risk:${el.dataset.wizardFailRisk}`, e.target.value);
+      syncWorkspaceChrome();
+    });
   });
   main.querySelectorAll('[data-wizard-fail-mit]').forEach((el) => {
-    el.addEventListener('input', (e) => applyWizardInput(`fail-mit:${el.dataset.wizardFailMit}`, e.target.value));
+    el.addEventListener('input', (e) => {
+      state.workspace = applyWizardInput(state.workspace, `fail-mit:${el.dataset.wizardFailMit}`, e.target.value);
+      syncWorkspaceChrome();
+    });
   });
 }
 
 function updateWorkspaceSidebar() {
-  const w = state.workspace;
-  const validation = validateSketch(w.sketch, w.wizard);
+  const chrome = getWorkspaceChromeState(state.workspace);
   const countEl = main.querySelector('[data-sketch-count]');
-  if (countEl) countEl.textContent = `${w.sketch.nodes.length} nodes, ${w.sketch.edges.length} edges`;
+  if (countEl) countEl.textContent = chrome.countLabel;
   const status = document.getElementById('validation-status');
   if (status) {
-    status.className = validation.complete ? 'checkpoint-result pass' : 'checkpoint-result fail';
-    status.textContent = validation.complete ? 'Interview-ready structure ✓' : validation.errors.join('; ');
+    status.className = chrome.complete ? 'checkpoint-result pass' : 'checkpoint-result fail';
+    status.textContent = chrome.statusText;
   }
   updateEdgeHint();
 }
@@ -625,7 +640,7 @@ function startTeachBackTimer() {
     display.textContent = `${m}:${s.toString().padStart(2, '0')}`;
     if (--remaining < 0) {
       clearInterval(interval);
-      state.workspace = setWizardField(state.workspace, 'teachBackCompleted', true);
+      state.workspace = applyWizardInput(state.workspace, 'teachBackCompleted', true);
       syncWorkspaceChrome();
       display.textContent = 'Teach-back complete!';
     }

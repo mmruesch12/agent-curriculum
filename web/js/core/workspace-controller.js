@@ -18,10 +18,19 @@ export function createDefaultWorkspace() {
   };
 }
 
+function cloneSketch(sketch) {
+  return {
+    ...sketch,
+    nodes: sketch.nodes.map((n) => ({ ...n })),
+    edges: sketch.edges.map((e) => ({ ...e })),
+    annotations: sketch.annotations ?? '',
+  };
+}
+
 function cloneWorkspace(ws) {
   return {
     ...ws,
-    sketch: { ...ws.sketch, nodes: [...ws.sketch.nodes], edges: [...ws.sketch.edges] },
+    sketch: cloneSketch(ws.sketch),
     wizard: {
       ...ws.wizard,
       tradeoffs: [...ws.wizard.tradeoffs],
@@ -112,17 +121,19 @@ export function selectNodeForEdge(workspace, nodeId) {
   if (!nodeExists(ws.sketch, nodeId)) {
     return clearEdgeSelection(ws);
   }
-  const { first } = ws.edgeSelection;
+  const first = ws.edgeSelection.first;
   if (!first) {
-    ws.edgeSelection = { first: nodeId };
-    return ws;
+    return { ...ws, edgeSelection: { first: nodeId } };
   }
   if (first === nodeId) {
     return clearEdgeSelection(ws);
   }
-  ws.sketch = addValidatedEdge(ws.sketch, first, nodeId, 'flow');
-  ws.edgeSelection = { first: null };
-  return ws;
+  const updatedSketch = addValidatedEdge(ws.sketch, first, nodeId, 'flow');
+  return {
+    ...ws,
+    sketch: updatedSketch,
+    edgeSelection: { first: null },
+  };
 }
 
 export function connectNodes(workspace, fromId, toId) {

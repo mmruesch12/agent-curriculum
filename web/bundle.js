@@ -855,10 +855,12 @@
     const wizard = validateWizard(wizardData);
     const nodeErrors = [];
     if (!sketch.nodes.length) nodeErrors.push("Sketch must have at least one node");
+    const errors = [...wizard.errors, ...nodeErrors];
     return {
       ...wizard,
+      complete: wizard.complete && nodeErrors.length === 0,
       sketchValid: nodeErrors.length === 0,
-      errors: [...wizard.errors, ...nodeErrors]
+      errors
     };
   }
 
@@ -942,10 +944,18 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       drag: { nodeId: null, offsetX: 0, offsetY: 0 }
     };
   }
+  function cloneSketch(sketch) {
+    return {
+      ...sketch,
+      nodes: sketch.nodes.map((n) => ({ ...n })),
+      edges: sketch.edges.map((e) => ({ ...e })),
+      annotations: sketch.annotations ?? ""
+    };
+  }
   function cloneWorkspace(ws) {
     return {
       ...ws,
-      sketch: { ...ws.sketch, nodes: [...ws.sketch.nodes], edges: [...ws.sketch.edges] },
+      sketch: cloneSketch(ws.sketch),
       wizard: {
         ...ws.wizard,
         tradeoffs: [...ws.wizard.tradeoffs],
@@ -1025,17 +1035,19 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     if (!nodeExists(ws.sketch, nodeId)) {
       return clearEdgeSelection(ws);
     }
-    const { first } = ws.edgeSelection;
+    const first = ws.edgeSelection.first;
     if (!first) {
-      ws.edgeSelection = { first: nodeId };
-      return ws;
+      return { ...ws, edgeSelection: { first: nodeId } };
     }
     if (first === nodeId) {
       return clearEdgeSelection(ws);
     }
-    ws.sketch = addValidatedEdge(ws.sketch, first, nodeId, "flow");
-    ws.edgeSelection = { first: null };
-    return ws;
+    const updatedSketch = addValidatedEdge(ws.sketch, first, nodeId, "flow");
+    return {
+      ...ws,
+      sketch: updatedSketch,
+      edgeSelection: { first: null }
+    };
   }
   function setDragState(workspace, drag) {
     return { ...cloneWorkspace(workspace), drag: { ...drag } };
@@ -1044,6 +1056,20 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     const ws = cloneWorkspace(workspace);
     ws.compareSketch = JSON.parse(JSON.stringify(ws.sketch));
     return ws;
+  }
+
+  // web/js/core/workspace-shell.js
+  function applyWizardInput(workspace, key, value) {
+    return setWizardField(workspace, key, value);
+  }
+  function getWorkspaceChromeState(workspace) {
+    const validation = validateSketch(workspace.sketch, workspace.wizard);
+    return {
+      countLabel: `${workspace.sketch.nodes.length} nodes, ${workspace.sketch.edges.length} edges`,
+      statusText: validation.complete ? "Interview-ready structure \u2713" : validation.errors.join("; "),
+      complete: validation.complete,
+      errors: validation.errors
+    };
   }
 
   // web/js/core/progress.js
@@ -1593,34 +1619,50 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     if (i === 5) return `<div class="wizard-step"><label>${step}</label><textarea data-wizard="costLatency">${w.wizard.costLatency}</textarea></div>`;
     return `<div class="wizard-step"><label>${step}</label><p>Use the timer button below.</p></div>`;
   }
-  function applyWizardInput(key, value) {
-    state.workspace = setWizardField(state.workspace, key, value);
-    syncWorkspaceChrome();
-  }
   function bindWizardInputs() {
-    main.querySelector('[data-wizard="scenario"]')?.addEventListener("input", (e) => applyWizardInput("scenario", e.target.value));
-    main.querySelector('[data-wizard="justify"]')?.addEventListener("input", (e) => applyWizardInput("justify", e.target.value));
-    main.querySelector('[data-wizard="costLatency"]')?.addEventListener("input", (e) => applyWizardInput("costLatency", e.target.value));
-    main.querySelector('[data-wizard="annotations"]')?.addEventListener("input", (e) => applyWizardInput("annotations", e.target.value));
+    main.querySelector('[data-wizard="scenario"]')?.addEventListener("input", (e) => {
+      state.workspace = applyWizardInput(state.workspace, "scenario", e.target.value);
+      syncWorkspaceChrome();
+    });
+    main.querySelector('[data-wizard="justify"]')?.addEventListener("input", (e) => {
+      state.workspace = applyWizardInput(state.workspace, "justify", e.target.value);
+      syncWorkspaceChrome();
+    });
+    main.querySelector('[data-wizard="costLatency"]')?.addEventListener("input", (e) => {
+      state.workspace = applyWizardInput(state.workspace, "costLatency", e.target.value);
+      syncWorkspaceChrome();
+    });
+    main.querySelector('[data-wizard="annotations"]')?.addEventListener("input", (e) => {
+      state.workspace = applyWizardInput(state.workspace, "annotations", e.target.value);
+      syncWorkspaceChrome();
+    });
     main.querySelectorAll("[data-wizard-tradeoff]").forEach((el) => {
-      el.addEventListener("input", (e) => applyWizardInput(`tradeoff:${el.dataset.wizardTradeoff}`, e.target.value));
+      el.addEventListener("input", (e) => {
+        state.workspace = applyWizardInput(state.workspace, `tradeoff:${el.dataset.wizardTradeoff}`, e.target.value);
+        syncWorkspaceChrome();
+      });
     });
     main.querySelectorAll("[data-wizard-fail-risk]").forEach((el) => {
-      el.addEventListener("input", (e) => applyWizardInput(`fail-risk:${el.dataset.wizardFailRisk}`, e.target.value));
+      el.addEventListener("input", (e) => {
+        state.workspace = applyWizardInput(state.workspace, `fail-risk:${el.dataset.wizardFailRisk}`, e.target.value);
+        syncWorkspaceChrome();
+      });
     });
     main.querySelectorAll("[data-wizard-fail-mit]").forEach((el) => {
-      el.addEventListener("input", (e) => applyWizardInput(`fail-mit:${el.dataset.wizardFailMit}`, e.target.value));
+      el.addEventListener("input", (e) => {
+        state.workspace = applyWizardInput(state.workspace, `fail-mit:${el.dataset.wizardFailMit}`, e.target.value);
+        syncWorkspaceChrome();
+      });
     });
   }
   function updateWorkspaceSidebar() {
-    const w = state.workspace;
-    const validation = validateSketch(w.sketch, w.wizard);
+    const chrome = getWorkspaceChromeState(state.workspace);
     const countEl = main.querySelector("[data-sketch-count]");
-    if (countEl) countEl.textContent = `${w.sketch.nodes.length} nodes, ${w.sketch.edges.length} edges`;
+    if (countEl) countEl.textContent = chrome.countLabel;
     const status = document.getElementById("validation-status");
     if (status) {
-      status.className = validation.complete ? "checkpoint-result pass" : "checkpoint-result fail";
-      status.textContent = validation.complete ? "Interview-ready structure \u2713" : validation.errors.join("; ");
+      status.className = chrome.complete ? "checkpoint-result pass" : "checkpoint-result fail";
+      status.textContent = chrome.statusText;
     }
     updateEdgeHint();
   }
@@ -1756,7 +1798,7 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       display.textContent = `${m}:${s.toString().padStart(2, "0")}`;
       if (--remaining < 0) {
         clearInterval(interval);
-        state.workspace = setWizardField(state.workspace, "teachBackCompleted", true);
+        state.workspace = applyWizardInput(state.workspace, "teachBackCompleted", true);
         syncWorkspaceChrome();
         display.textContent = "Teach-back complete!";
       }

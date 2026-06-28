@@ -84,12 +84,22 @@ async function runPlaywright() {
       await page.click('[data-view="workspace"]');
       await page.waitForSelector('.canvas-bg');
 
-      await page.click('.canvas-bg', { position: { x: 150, y: 120 } });
-      await page.click('.canvas-bg', { position: { x: 400, y: 120 } });
-      await sleep(150);
-      await page.locator('.canvas-node').nth(0).click();
-      await page.locator('.canvas-node').nth(1).click();
-      await sleep(150);
+      // Capstone load + two-node connect (GraphRAG Retriever → Session Memory)
+      await page.click('[data-capstone="research-agent"]');
+      await sleep(200);
+      const capNodesBefore = await page.locator('.canvas-node').count();
+      log(`Capstone nodes: ${capNodesBefore}`);
+      assertTruthy(capNodesBefore >= 4, 'capstone nodes loaded');
+
+      const retriever = page.locator('.canvas-node').filter({ hasText: 'GraphRAG' });
+      const memory = page.locator('.canvas-node').filter({ hasText: 'Session Memory' });
+      await retriever.click();
+      await memory.click();
+      await sleep(200);
+
+      const countAfterConnect = await page.textContent('[data-sketch-count]');
+      log(`After capstone connect: ${countAfterConnect}`);
+      assertTruthy(countAfterConnect?.includes('4 edges'), `capstone edge added: ${countAfterConnect}`);
 
       await fillFullWizard(page);
       await sleep(200);
@@ -112,6 +122,7 @@ async function runPlaywright() {
       assertTruthy((mdCapture.match(/^## \d/gm) || []).length >= 7, '7 sections');
       TRADEOFFS.forEach((t) => assertTruthy(mdCapture.includes(t), `tradeoff: ${t}`));
       FAILURES.forEach((f) => assertTruthy(mdCapture.includes(f.risk), `failure: ${f.risk}`));
+      assertTruthy(mdCapture.includes('n2 → n3') || mdCapture.includes('GraphRAG Retriever'), 'capstone edge in export');
 
       const downloads = [];
       page.on('download', (d) => downloads.push(d));

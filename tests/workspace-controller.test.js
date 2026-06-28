@@ -26,6 +26,8 @@ describe('workspace-controller', () => {
     ws = selectNodeForEdge(ws, memory.id);
     assert.equal(ws.edgeSelection.first, null);
     assert.equal(ws.sketch.edges.length, before + 1);
+    const added = ws.sketch.edges.find((e) => e.from === retriever.id && e.to === memory.id);
+    assert.ok(added, 'edge between retriever and memory');
     ws.sketch.edges.forEach((e) => {
       assert.ok(ws.sketch.nodes.some((n) => n.id === e.from));
       assert.ok(ws.sketch.nodes.some((n) => n.id === e.to));
@@ -67,6 +69,15 @@ describe('workspace-controller', () => {
     const failureLines = md.split('\n').filter((l) => /^\d+\. \*\*risk-/.test(l));
     assert.ok(tradeoffLines.length >= 3);
     assert.ok(failureLines.length >= 5);
+  });
+
+  it('selectNodeForEdge adds edge with stable capstone node ids n2 and n3', () => {
+    let ws = loadCapstone(createDefaultWorkspace(), CAPSTONES[0]);
+    ws = selectNodeForEdge(ws, 'n2');
+    assert.equal(ws.edgeSelection.first, 'n2');
+    ws = selectNodeForEdge(ws, 'n3');
+    assert.equal(ws.edgeSelection.first, null);
+    assert.ok(ws.sketch.edges.some((e) => e.from === 'n2' && e.to === 'n3'));
   });
 
   it('connectNodes rejects dangling endpoint ids', () => {
