@@ -1,0 +1,13 @@
+{
+  "name": "agent-architect-academy",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "serve": "npx --yes serve web -p 3456",
+    "verify:launch": "node scripts/verify-launch.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.1"
+  }
+}

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agent Architect Academy</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-layout" id="app" role="application" aria-label="Agent Architect Academy">
+    <nav class="sidebar" aria-label="Main navigation">
+      <h1>Agent Architect Academy</h1>
+      <p class="subtitle">Production Enterprise AI Agents</p>
+      <div class="progress-ring" id="progress-ring" aria-label="Module progress"></div>
+      <p class="streak" id="streak-display" aria-live="polite"></p>
+      <div id="review-nudges"></div>
+      <button class="nav-link active" data-view="dashboard" aria-label="Dashboard">Dashboard</button>
+      <button class="nav-link" data-view="modules" aria-label="Modules">Modules</button>
+      <button class="nav-link" data-view="pattern-lab" aria-label="Pattern Lab">Pattern Lab</button>
+      <button class="nav-link" data-view="workspace" aria-label="Architect Workspace">Architect Workspace</button>
+      <button class="nav-link" data-view="resources" aria-label="Resources">Resources</button>
+      <button class="nav-link" data-view="review" aria-label="Review Mode">Review Mode</button>
+    </nav>
+    <main class="content" id="main-content" tabindex="-1"></main>
+  </div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
