@@ -805,6 +805,32 @@
     };
   }
 
+  // web/js/core/sketch-render.js
+  var NODE_COLORS = {
+    Agent: "#6366f1",
+    Tool: "#22d3ee",
+    Memory: "#a78bfa",
+    HITL: "#f59e0b",
+    Guardrail: "#f87171",
+    Router: "#34d399"
+  };
+  function renderSketchSvg(sketch, selectedNodeId = null) {
+    const nodeEls = sketch.nodes.map((n) => {
+      const selected = selectedNodeId === n.id ? " selected-first" : "";
+      return `<g class="graph-node canvas-node${selected}" data-node-id="${n.id}" role="button" tabindex="0" aria-label="${n.type} ${n.label}">
+      <rect class="node-rect" x="${n.x}" y="${n.y}" width="100" height="40" rx="8" fill="${NODE_COLORS[n.type] || "#6366f1"}" opacity="0.9"/>
+      <text x="${n.x + 50}" y="${n.y + 25}" text-anchor="middle" fill="white" font-size="10" pointer-events="none">${n.label}</text>
+    </g>`;
+    }).join("");
+    const edgeEls = sketch.edges.map((e) => {
+      const from = sketch.nodes.find((n) => n.id === e.from);
+      const to = sketch.nodes.find((n) => n.id === e.to);
+      if (!from || !to) return "";
+      return `<line x1="${from.x + 50}" y1="${from.y + 40}" x2="${to.x + 50}" y2="${to.y}" stroke="#22d3ee" stroke-width="2"/>`;
+    }).join("");
+    return `<svg xmlns="http://www.w3.org/2000/svg" class="workspace-svg" width="800" height="400" viewBox="0 0 800 400" aria-label="Architecture sketch"><rect width="800" height="400" fill="#0a0e14" class="canvas-bg"/>${edgeEls}${nodeEls}</svg>`;
+  }
+
   // web/js/core/validators.js
   var MIN_TRADEOFFS = 3;
   var MIN_FAILURES = 5;
@@ -1009,7 +1035,7 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       },
       compareSketch: null,
       selectedNodeType: "Agent",
-      edgeConnectFrom: null,
+      edgeSelection: { first: null },
       drag: { nodeId: null, offsetX: 0, offsetY: 0 }
     }
   };
@@ -1412,9 +1438,9 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         <div class="node-palette" role="group" aria-label="Node palette">
           ${NODE_TYPES.map((t) => `<button class="palette-btn ${w.selectedNodeType === t ? "selected" : ""}" data-node-type="${t}" aria-label="Add ${t}">${t}</button>`).join("")}
         </div>
-        <p class="tag">Click canvas to place \xB7 Drag nodes to reposition \xB7 Select two nodes to connect</p>
+        <p class="tag">Click canvas to place \xB7 Drag to move \xB7 Click two nodes to connect</p>
+        <p id="edge-hint" class="tag" aria-live="polite"></p>
         <div class="canvas-wrap" id="canvas-wrap" role="img" aria-label="Architecture canvas"></div>
-        <button class="btn btn-secondary" id="connect-edge-btn">Connect Selected Nodes</button>
         <button class="btn btn-secondary" id="export-btn">Export Markdown + PNG</button>
       </div>
       <div class="glass-card">
@@ -1447,18 +1473,8 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         renderWorkspace();
       };
     });
-    document.getElementById("connect-edge-btn").onclick = () => {
-      const { edgeConnectFrom } = state.workspace;
-      const selected = document.querySelector(".canvas-node.selected");
-      if (!edgeConnectFrom || !selected) return;
-      const toId = selected.dataset.nodeId;
-      if (edgeConnectFrom !== toId) {
-        state.workspace.sketch = addEdge(state.workspace.sketch, edgeConnectFrom, toId, "flow");
-        state.workspace.edgeConnectFrom = null;
-        renderCanvas();
-      }
-    };
     document.getElementById("export-btn").onclick = () => exportWorkspace();
+    updateEdgeHint();
     document.getElementById("save-compare").onclick = () => {
       state.workspace.compareSketch = JSON.parse(JSON.stringify(state.workspace.sketch));
       const diff = compareSketches(state.workspace.compareSketch, state.workspace.sketch);
@@ -1469,7 +1485,7 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
   }
   function renderWizardField(step, i, w) {
     if (i === 0) return `<div class="wizard-step"><label>${step}</label><textarea data-wizard="scenario">${w.wizard.scenario}</textarea></div>`;
-    if (i === 1) return `<div class="wizard-step"><label>${step}</label><p>${w.sketch.nodes.length} nodes, ${w.sketch.edges.length} edges</p><label>Annotations</label><textarea data-wizard="annotations" aria-label="Sketch annotations">${w.sketch.annotations || ""}</textarea></div>`;
+    if (i === 1) return `<div class="wizard-step"><label>${step}</label><p data-sketch-count>${w.sketch.nodes.length} nodes, ${w.sketch.edges.length} edges</p><label>Annotations</label><textarea data-wizard="annotations" aria-label="Sketch annotations">${w.sketch.annotations || ""}</textarea></div>`;
     if (i === 2) return `<div class="wizard-step"><label>${step}</label><textarea data-wizard="justify">${w.wizard.justify}</textarea></div>`;
     if (i === 3) return `<div class="wizard-step"><label>${step}</label>${w.wizard.tradeoffs.map((t, j) => `<input type="text" data-wizard-tradeoff="${j}" value="${t}" placeholder="Tradeoff ${j + 1}">`).join("")}</div>`;
     if (i === 4) return `<div class="wizard-step"><label>${step}</label>${w.wizard.failures.map((f, j) => `<input type="text" data-wizard-fail-risk="${j}" value="${f.risk}" placeholder="Risk ${j + 1}"><input type="text" data-wizard-fail-mit="${j}" value="${f.mitigation}" placeholder="Mitigation">`).join("")}</div>`;
@@ -1488,7 +1504,10 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
     });
     main.querySelector('[data-wizard="annotations"]')?.addEventListener("input", (e) => {
       state.workspace.sketch = setAnnotations(state.workspace.sketch, e.target.value);
+      updateWorkspaceSidebar();
     });
+    main.querySelector('[data-wizard="scenario"]')?.addEventListener("input", () => updateWorkspaceSidebar());
+    main.querySelector('[data-wizard="justify"]')?.addEventListener("input", () => updateWorkspaceSidebar());
     main.querySelectorAll("[data-wizard-tradeoff]").forEach((el) => {
       el.addEventListener("input", (e) => {
         state.workspace.wizard.tradeoffs[+el.dataset.wizardTradeoff] = e.target.value;
@@ -1505,43 +1524,62 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       });
     });
   }
+  function updateWorkspaceSidebar() {
+    const w = state.workspace;
+    const validation = validateSketch(w.sketch, w.wizard);
+    const countEl = main.querySelector("[data-sketch-count]");
+    if (countEl) countEl.textContent = `${w.sketch.nodes.length} nodes, ${w.sketch.edges.length} edges`;
+    const status = document.getElementById("validation-status");
+    if (status) {
+      status.className = validation.complete ? "checkpoint-result pass" : "checkpoint-result fail";
+      status.textContent = validation.complete ? "Interview-ready structure \u2713" : validation.errors.join("; ");
+    }
+    updateEdgeHint();
+  }
+  function updateEdgeHint() {
+    const hint = document.getElementById("edge-hint");
+    if (!hint) return;
+    const first = state.workspace.edgeSelection.first;
+    hint.textContent = first ? `First node selected \u2014 click a second node to connect` : "";
+  }
+  function refreshWorkspaceAfterSketchChange() {
+    renderCanvas();
+    updateWorkspaceSidebar();
+  }
+  function handleNodeSelect(nodeId) {
+    const sel = state.workspace.edgeSelection;
+    if (!sel.first) {
+      sel.first = nodeId;
+    } else if (sel.first === nodeId) {
+      sel.first = null;
+    } else {
+      state.workspace.sketch = addEdge(state.workspace.sketch, sel.first, nodeId, "flow");
+      sel.first = null;
+    }
+    refreshWorkspaceAfterSketchChange();
+  }
   function renderCanvas() {
     const wrap = document.getElementById("canvas-wrap");
     if (wrap) {
-      wrap.innerHTML = renderSketchSvg(state.workspace.sketch);
+      wrap.innerHTML = renderSketchSvg(state.workspace.sketch, state.workspace.edgeSelection.first);
       bindCanvasInteractions();
     }
-  }
-  function renderSketchSvg(sketch) {
-    const colors = { Agent: "#6366f1", Tool: "#22d3ee", Memory: "#a78bfa", HITL: "#f59e0b", Guardrail: "#f87171", Router: "#34d399" };
-    const nodeEls = sketch.nodes.map((n) => `<g class="graph-node canvas-node" data-node-id="${n.id}" role="button" tabindex="0" aria-label="${n.type} ${n.label}">
-      <rect class="node-rect" x="${n.x}" y="${n.y}" width="100" height="40" rx="8" fill="${colors[n.type] || "#6366f1"}" opacity="0.9"/>
-      <text x="${n.x + 50}" y="${n.y + 25}" text-anchor="middle" fill="white" font-size="10" pointer-events="none">${n.label}</text>
-    </g>`).join("");
-    const edgeEls = sketch.edges.map((e) => {
-      const from = sketch.nodes.find((n) => n.id === e.from);
-      const to = sketch.nodes.find((n) => n.id === e.to);
-      if (!from || !to) return "";
-      return `<line x1="${from.x + 50}" y1="${from.y + 40}" x2="${to.x + 50}" y2="${to.y}" stroke="#22d3ee" stroke-width="2"/>`;
-    }).join("");
-    return `<svg class="workspace-svg" width="100%" height="400" viewBox="0 0 800 400" aria-label="Architecture sketch"><rect width="800" height="400" fill="#0a0e14" class="canvas-bg"/>${edgeEls}${nodeEls}</svg>`;
   }
   function bindCanvasInteractions() {
     const svg = document.querySelector(".workspace-svg");
     if (!svg) return;
+    const DRAG_THRESHOLD = 5;
     svg.querySelectorAll(".canvas-node").forEach((nodeEl) => {
       const nodeId = nodeEl.dataset.nodeId;
+      const pointer = { down: false, moved: false, startX: 0, startY: 0 };
       nodeEl.addEventListener("pointerdown", (e) => {
         e.stopPropagation();
+        pointer.down = true;
+        pointer.moved = false;
+        pointer.startX = e.clientX;
+        pointer.startY = e.clientY;
         const n = state.workspace.sketch.nodes.find((x) => x.id === nodeId);
         if (!n) return;
-        if (state.workspace.edgeConnectFrom && state.workspace.edgeConnectFrom !== nodeId) {
-          nodeEl.classList.add("selected");
-          return;
-        }
-        state.workspace.edgeConnectFrom = nodeId;
-        svg.querySelectorAll(".canvas-node").forEach((el) => el.classList.remove("selected"));
-        nodeEl.classList.add("selected");
         const rect = svg.getBoundingClientRect();
         const scaleX = 800 / rect.width;
         const scaleY = 400 / rect.height;
@@ -1553,7 +1591,11 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         nodeEl.setPointerCapture(e.pointerId);
       });
       nodeEl.addEventListener("pointermove", (e) => {
-        if (state.workspace.drag.nodeId !== nodeId) return;
+        if (!pointer.down) return;
+        if (Math.hypot(e.clientX - pointer.startX, e.clientY - pointer.startY) > DRAG_THRESHOLD) {
+          pointer.moved = true;
+        }
+        if (!pointer.moved || state.workspace.drag.nodeId !== nodeId) return;
         const rect = svg.getBoundingClientRect();
         const scaleX = 800 / rect.width;
         const scaleY = 400 / rect.height;
@@ -1569,10 +1611,16 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         renderCanvasEdges(svg);
       });
       nodeEl.addEventListener("pointerup", () => {
+        if (pointer.down && !pointer.moved) {
+          handleNodeSelect(nodeId);
+        }
+        pointer.down = false;
+        pointer.moved = false;
         state.workspace.drag = { nodeId: null, offsetX: 0, offsetY: 0 };
       });
     });
     svg.querySelector(".canvas-bg")?.addEventListener("click", (e) => {
+      if (e.target !== svg.querySelector(".canvas-bg")) return;
       const rect = svg.getBoundingClientRect();
       const scaleX = 800 / rect.width;
       const scaleY = 400 / rect.height;
@@ -1585,7 +1633,7 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
         Math.max(0, Math.min(700, x)),
         Math.max(0, Math.min(360, y))
       );
-      renderCanvas();
+      refreshWorkspaceAfterSketchChange();
     });
   }
   function renderCanvasEdges(svg) {
@@ -1674,5 +1722,19 @@ Teach-back completed: ${wizardData.teachBackCompleted ? "Yes" : "No"}
       render();
     });
   }
+  window.__AAA = {
+    runExport: async () => {
+      const svg = renderSketchSvg(state.workspace.sketch);
+      const png = await rasterizeSvgToPng(svg, 800, 400);
+      const md = generateExport(state.workspace.sketch, state.workspace.wizard);
+      return {
+        pngPrefix: png.slice(0, 22),
+        mdSections: (md.match(/^## \d/gm) || []).length,
+        nodes: state.workspace.sketch.nodes.length,
+        edges: state.workspace.sketch.edges.length,
+        hasAnnotations: Boolean(state.workspace.sketch.annotations)
+      };
+    }
+  };
   init();
 })();

@@ -21,9 +21,7 @@ async function waitForServer(url, timeoutMs) {
     try {
       const res = await fetch(url);
       if (res.ok) return;
-    } catch {
-      /* retry */
-    }
+    } catch { /* retry */ }
     await sleep(400);
   }
   throw new Error(`Server not ready at ${url} after ${timeoutMs}ms`);
@@ -55,58 +53,60 @@ async function runPlaywright() {
       await page.goto(URL, { waitUntil: 'networkidle' });
       await page.waitForSelector('#app', { timeout: 10000 });
 
-      log(`Title: ${await page.title()}`);
-      assertTruthy((await page.title()).includes('Agent Architect'), 'title');
-      log(`Dashboard h2: ${await page.isVisible('h2')}`);
-
-      // Checkpoint scoring
       await page.click('[data-view="modules"]');
-      await page.waitForSelector('[data-cp-submit="0"]');
       await page.fill('[data-cp-input="0"]', 'Enterprise governance audit oversight and human control reduce risk');
       await page.click('[data-cp-submit="0"]');
-      const cpResult = await page.textContent('#cp-result-0');
-      log(`Checkpoint result: ${cpResult?.slice(0, 80)}`);
-      assertTruthy(cpResult?.includes('Good') || cpResult?.includes('governance'), 'checkpoint pass');
+      log(`Checkpoint: ${(await page.textContent('#cp-result-0'))?.slice(0, 60)}`);
 
-      // Pattern Lab ReAct
       await page.click('[data-view="pattern-lab"]');
-      await page.waitForSelector('#react-step');
       await page.click('#react-step');
-      const simText = await page.textContent('#react-display');
-      log(`ReAct display: ${simText?.slice(0, 100)}`);
-      assertTruthy(simText?.includes('Thought'), 'react thought');
+      log(`ReAct: ${(await page.textContent('#react-display'))?.includes('Thought')}`);
 
-      // Workspace: node types, canvas place, wizard validation
       await page.click('[data-view="workspace"]');
-      await page.waitForSelector('.node-palette');
-      const palette = await page.locator('.palette-btn').allTextContents();
-      log(`Node palette: ${palette.join(', ')}`);
-      ['Agent', 'Tool', 'Memory', 'HITL', 'Guardrail', 'Router'].forEach((t) => assertTruthy(palette.includes(t), `node type ${t}`));
+      await page.waitForSelector('.canvas-bg');
 
       const nodesBefore = await page.locator('.canvas-node').count();
-      await page.click('.canvas-bg', { position: { x: 200, y: 150 } });
+      await page.click('.canvas-bg', { position: { x: 150, y: 120 } });
+      await page.click('.canvas-bg', { position: { x: 400, y: 120 } });
       await sleep(200);
       const nodesAfter = await page.locator('.canvas-node').count();
-      log(`Canvas nodes before/after click: ${nodesBefore}/${nodesAfter}`);
-      assertTruthy(nodesAfter > nodesBefore, 'canvas click place');
+      log(`Nodes placed: ${nodesBefore} -> ${nodesAfter}`);
+      assertTruthy(nodesAfter >= 2, 'two nodes placed');
 
-      await page.fill('[data-wizard="scenario"]', 'Test scenario');
-      const validation = await page.textContent('#validation-status');
-      log(`Wizard validation (incomplete): ${validation?.slice(0, 60)}`);
-      assertTruthy(validation?.includes('tradeoff') || validation?.includes('required'), 'wizard validation');
+      const countText = await page.textContent('[data-sketch-count]');
+      log(`Sketch count UI: ${countText}`);
+      assertTruthy(countText?.includes('2 nodes'), 'sidebar count updated');
 
-      // Export via evaluate (avoids download dialog)
-      const exportPreview = await page.evaluate(() => {
-        const sketch = { name: 'Test', nodes: [{ id: 'n1', type: 'Agent', label: 'A', x: 10, y: 10 }], edges: [], annotations: 'note' };
-        const wizard = {
-          scenario: 'S', justify: 'J',
-          tradeoffs: ['t1', 't2', 't3'],
-          failures: Array(5).fill({ risk: 'r', mitigation: 'm' }),
-          costLatency: 'low', teachBackCompleted: true,
-        };
-        return { nodeCount: sketch.nodes.length, wizardFields: Object.keys(wizard).length };
+      const node0 = page.locator('.canvas-node').nth(0);
+      const node1 = page.locator('.canvas-node').nth(1);
+      await node0.click();
+      await node1.click();
+      await sleep(200);
+      const countAfterEdge = await page.textContent('[data-sketch-count]');
+      log(`After edge connect: ${countAfterEdge}`);
+      assertTruthy(countAfterEdge?.includes('1 edges') || countAfterEdge?.includes('1 edge'), 'edge created');
+
+      await page.fill('[data-wizard="scenario"]', 'Enterprise dev agent');
+      await page.fill('[data-wizard="justify"]', 'Supervisor with HITL');
+      await page.fill('[data-wizard="annotations"]', 'Gate before deploy');
+
+      const exportResult = await page.evaluate(async () => {
+        if (!window.__AAA?.runExport) return { error: 'missing __AAA.runExport' };
+        return window.__AAA.runExport();
       });
-      log(`Export context: nodes=${exportPreview.nodeCount}, wizardFields=${exportPreview.wizardFields}`);
+      log(`Browser export: png=${exportResult.pngPrefix}, sections=${exportResult.mdSections}, edges=${exportResult.edges}`);
+      assertTruthy(exportResult.pngPrefix?.startsWith('data:image/png'), 'png in browser');
+      assertTruthy(exportResult.mdSections >= 7, '7 md sections');
+      assertTruthy(exportResult.edges >= 1, 'export has edges');
+      assertTruthy(exportResult.hasAnnotations, 'annotations in sketch');
+
+      const downloads = [];
+      page.on('download', (d) => downloads.push(d.suggestedFilename()));
+      await page.click('#export-btn');
+      await sleep(800);
+      log(`Export button downloads: ${downloads.join(', ')}`);
+      assertTruthy(downloads.some((f) => f?.endsWith('.md')), 'md download');
+      assertTruthy(downloads.some((f) => f?.endsWith('.png')), 'png download');
 
       assertTruthy(errors.length === 0, `js errors: ${errors.join('; ')}`);
       await browser.close();

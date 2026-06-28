@@ -239,7 +239,7 @@ textarea { min-height: 60px; resize: vertical; }
 }
 
 .graph-node.active { filter: drop-shadow(0 0 8px var(--cyan)); }
-.canvas-node.selected .node-rect { stroke: var(--cyan); stroke-width: 3; }
+.canvas-node.selected-first .node-rect { stroke: var(--cyan); stroke-width: 3; }
 .canvas-bg { cursor: crosshair; }
 .canvas-node { cursor: grab; }
 .graph-node.persistence { stroke: var(--amber); stroke-width: 2; }

@@ -10,6 +10,7 @@ import { getTrace, getFailureModes } from '../web/js/core/trace-simulator.js';
 import { createHitlState, placeHitlGate } from '../web/js/core/hitl-simulator.js';
 import { getIntegrationDiff } from '../web/js/core/integration-simulator.js';
 import { createSketch, addNode, addEdge, compareSketches, moveNode, setAnnotations } from '../web/js/core/sketch-model.js';
+import { renderSketchSvg } from '../web/js/core/sketch-render.js';
 import { validateSketch } from '../web/js/core/validators.js';
 import { generateExport, rasterizeSvgToPng, svgToDataUrl } from '../web/js/core/export.js';
 import { createDefaultProgress, computeModuleRings, computeReviewItems } from '../web/js/core/progress.js';
@@ -151,21 +152,48 @@ describe('Sketch model and validators', () => {
 });
 
 describe('Export generator', () => {
-  it('rasterizes SVG to PNG data URL with DOM shim', async () => {
-    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"><rect width="10" height="10" fill="red"/></svg>';
-    const mockEnv = {
-      Image: class {
-        set src(v) { this._src = v; setTimeout(() => this.onload?.(), 0); }
-      },
-      document: {
-        createElement: () => ({
-          width: 0, height: 0,
-          getContext: () => ({ fillStyle: '', fillRect() {}, drawImage() {} }),
-          toDataURL: (fmt) => `data:${fmt};base64,abc`,
-        }),
-      },
-    };
-    const png = await rasterizeSvgToPng(svg, 10, 10, mockEnv);
+  const mockEnv = {
+    Image: class {
+      set src(v) { this._src = v; setTimeout(() => this.onload?.(), 0); }
+    },
+    document: {
+      createElement: () => ({
+        width: 0, height: 0,
+        getContext: () => ({ fillStyle: '', fillRect() {}, drawImage() {} }),
+        toDataURL: (fmt) => `data:${fmt};base64,abc`,
+      }),
+    },
+  };
+
+  it('renderSketchSvg output rasterizes to PNG (shipped path)', async () => {
+    let sketch = createSketch('PNG path test');
+    sketch = addNode(sketch, 'Agent', 'Main', 50, 50);
+    sketch = addNode(sketch, 'Router', 'Route', 200, 50);
+    sketch = addEdge(sketch, sketch.nodes[0].id, sketch.nodes[1].id);
+    const svg = renderSketchSvg(sketch);
+    assert.match(svg, /xmlns="http:\/\/www.w3.org\/2000\/svg"/);
+    assert.match(svg, /width="800"/);
+    assert.doesNotMatch(svg, /width="100%"/);
+    const png = await rasterizeSvgToPng(svg, 800, 400, mockEnv);
+    assert.match(png, /^data:image\/png/);
+  });
+
+  it('user-built sketch flow produces export with edges and annotations', async () => {
+    let sketch = createSketch('Flow test');
+    sketch = addNode(sketch, 'Agent', 'A', 10, 10);
+    sketch = addNode(sketch, 'Tool', 'T', 150, 10);
+    sketch = addEdge(sketch, sketch.nodes[0].id, sketch.nodes[1].id);
+    sketch = setAnnotations(sketch, 'notes here');
+    const md = generateExport(sketch, {
+      scenario: 's', justify: 'j',
+      tradeoffs: ['a', 'b', 'c'],
+      failures: Array(5).fill({ risk: 'r', mitigation: 'm' }),
+      costLatency: 'c', teachBackCompleted: true,
+    });
+    assert.match(md, /notes here/);
+    assert.match(md, /1 edges|Edges: 1|→/);
+    const svg = renderSketchSvg(sketch);
+    const png = await rasterizeSvgToPng(svg, 800, 400, mockEnv);
     assert.match(png, /^data:image\/png/);
     assert.match(svgToDataUrl(svg), /^data:image\/svg\+xml/);
   });
