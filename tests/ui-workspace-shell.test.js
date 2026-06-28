@@ -24,6 +24,18 @@ const WIZARD = {
 };
 
 describe('ui-workspace-shell (app.js listener path)', () => {
+  it('partial wizard fill surfaces tradeoff minimum error via shell chrome', () => {
+    let ws = createDefaultWorkspace();
+    ws = applyWizardInput(ws, 'scenario', WIZARD.scenario);
+    ws = applyWizardInput(ws, 'justify', WIZARD.justify);
+    ws = applyWizardInput(ws, 'tradeoff:0', WIZARD.tradeoffs[0]);
+
+    const chrome = getWorkspaceChromeState(ws);
+    assert.equal(chrome.complete, false);
+    assert.match(chrome.statusText, /tradeoff/i);
+    assert.match(chrome.statusText, /At least 3 tradeoffs required/);
+  });
+
   it('applyWizardInput + getWorkspaceChromeState mirrors bindWizardInputs + syncWorkspaceChrome', () => {
     let ws = createDefaultWorkspace();
     ws = applyWizardInput(ws, 'scenario', WIZARD.scenario);
@@ -36,7 +48,9 @@ describe('ui-workspace-shell (app.js listener path)', () => {
     ws = applyWizardInput(ws, 'costLatency', WIZARD.costLatency);
 
     let chrome = getWorkspaceChromeState(ws);
-    assert.ok(chrome.statusText.includes('tradeoff') || chrome.statusText.includes('node'));
+    assert.equal(chrome.complete, false);
+    assert.equal(chrome.statusText, 'Sketch must have at least one node');
+    assert.equal(chrome.countLabel, '0 nodes, 0 edges');
 
     ws = applyWizardInput(ws, 'annotations', 'note');
     ws = placeNode(ws, 'Agent', 50, 50);
