@@ -4,7 +4,7 @@ import { writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const SCRATCH = process.env.SCRATCH || '/var/folders/h5/777kg7xs0d3345cjkktl8qxc0000gn/T/grok-goal-8af6a0b5e05f/implementer';
+const SCRATCH = process.env.SCRATCH || '/var/folders/h5/777kg7xs0d3345cjkktl8qxc0000gn/T/grok-goal-5c88c7a4a5ac/implementer';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 3456;
 const URL = `http://127.0.0.1:${PORT}`;
@@ -80,9 +80,19 @@ async function runPlaywright() {
 
       await page.goto(URL, { waitUntil: 'networkidle' });
       await page.waitForSelector('#app');
+      await page.waitForSelector('#progress-ring');
+      const hasSidebarToggle = await page.locator('#sidebar-toggle').count();
+      assertTruthy(hasSidebarToggle === 1, 'sidebar-toggle in DOM');
+      log(`Primary surfaces: progress-ring, sidebar-toggle present`);
 
       await page.click('[data-view="workspace"]');
       await page.waitForSelector('.canvas-bg');
+      const canvasDims = await page.evaluate(() => {
+        const svg = document.querySelector('.workspace-svg');
+        return { width: svg?.getAttribute('width'), height: svg?.getAttribute('height') };
+      });
+      log(`Canvas dimensions: ${canvasDims?.width}x${canvasDims?.height}`);
+      assertTruthy(canvasDims?.width === '800' && canvasDims?.height === '400', 'canvas 800x400');
 
       // Capstone load + two-node connect (GraphRAG Retriever → Session Memory)
       await page.click('[data-capstone="research-agent"]');

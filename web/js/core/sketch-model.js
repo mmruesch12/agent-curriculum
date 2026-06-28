@@ -20,6 +20,25 @@ export function addNode(sketch, type, label, x, y) {
   };
 }
 
+export function removeNode(sketch, nodeId) {
+  return {
+    ...sketch,
+    nodes: sketch.nodes.filter((n) => n.id !== nodeId),
+    edges: sketch.edges.filter((e) => e.from !== nodeId && e.to !== nodeId),
+  };
+}
+
+export function removeEdge(sketch, fromId, toId) {
+  return {
+    ...sketch,
+    edges: sketch.edges.filter((e) => !(e.from === fromId && e.to === toId)),
+  };
+}
+
+export function clearSketch(sketch, name = sketch.name) {
+  return { ...sketch, name, nodes: [], edges: [], annotations: '' };
+}
+
 export function moveNode(sketch, nodeId, x, y) {
   return {
     ...sketch,
@@ -29,6 +48,15 @@ export function moveNode(sketch, nodeId, x, y) {
 
 export function setAnnotations(sketch, annotations) {
   return { ...sketch, annotations };
+}
+
+export function setEdgeLabel(sketch, fromId, toId, label) {
+  return {
+    ...sketch,
+    edges: sketch.edges.map((e) =>
+      e.from === fromId && e.to === toId ? { ...e, label } : e,
+    ),
+  };
 }
 
 export function addEdge(sketch, fromId, toId, label = '') {

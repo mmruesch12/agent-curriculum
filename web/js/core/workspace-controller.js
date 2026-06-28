@@ -1,4 +1,4 @@
-import { createSketch, addNode, moveNode, setAnnotations } from './sketch-model.js';
+import { createSketch, addNode, moveNode, setAnnotations, removeNode, removeEdge, clearSketch } from './sketch-model.js';
 
 export function createDefaultWorkspace() {
   return {
@@ -13,6 +13,7 @@ export function createDefaultWorkspace() {
     },
     compareSketch: null,
     selectedNodeType: 'Agent',
+    selectedNodeId: null,
     edgeSelection: { first: null },
     drag: { nodeId: null, offsetX: 0, offsetY: 0 },
   };
@@ -59,7 +60,7 @@ export function addValidatedEdge(sketch, fromId, toId, label = '') {
   if (duplicate) return sketch;
   return {
     ...sketch,
-    edges: [...sketch.edges, { from: fromId, to: toId, label }],
+    edges: [...sketch.edges, { from: fromId, to: toId, label: label || 'flow' }],
   };
 }
 
@@ -68,6 +69,7 @@ export function loadCapstone(workspace, capstone) {
   ws.sketch = createSketch(capstone.name, capstone);
   ws.wizard = { ...ws.wizard, scenario: capstone.description };
   ws.edgeSelection = { first: null };
+  ws.selectedNodeId = null;
   return ws;
 }
 
@@ -75,11 +77,45 @@ export function resetSketch(workspace, name = 'Re-sketch Challenge') {
   const ws = cloneWorkspace(workspace);
   ws.sketch = createSketch(name);
   ws.edgeSelection = { first: null };
+  ws.selectedNodeId = null;
+  return ws;
+}
+
+export function clearCanvas(workspace) {
+  const ws = cloneWorkspace(workspace);
+  ws.sketch = clearSketch(ws.sketch);
+  ws.edgeSelection = { first: null };
+  ws.selectedNodeId = null;
+  return ws;
+}
+
+export function deleteSelectedNode(workspace) {
+  const ws = cloneWorkspace(workspace);
+  if (!ws.selectedNodeId) return ws;
+  ws.sketch = removeNode(ws.sketch, ws.selectedNodeId);
+  ws.selectedNodeId = null;
+  ws.edgeSelection = { first: null };
+  return ws;
+}
+
+export function deleteLastEdge(workspace) {
+  const ws = cloneWorkspace(workspace);
+  if (!ws.sketch.edges.length) return ws;
+  const last = ws.sketch.edges[ws.sketch.edges.length - 1];
+  ws.sketch = removeEdge(ws.sketch, last.from, last.to);
   return ws;
 }
 
 export function setSelectedNodeType(workspace, nodeType) {
   return { ...cloneWorkspace(workspace), selectedNodeType: nodeType };
+}
+
+export function selectCanvasNode(workspace, nodeId) {
+  const ws = cloneWorkspace(workspace);
+  if (!nodeExists(ws.sketch, nodeId)) {
+    return { ...ws, selectedNodeId: null };
+  }
+  return { ...ws, selectedNodeId: nodeId };
 }
 
 export function setWizardField(workspace, key, value) {
@@ -119,8 +155,9 @@ export function moveNodeOnCanvas(workspace, nodeId, x, y) {
 export function selectNodeForEdge(workspace, nodeId) {
   const ws = cloneWorkspace(workspace);
   if (!nodeExists(ws.sketch, nodeId)) {
-    return clearEdgeSelection(ws);
+    return clearEdgeSelection({ ...ws, selectedNodeId: null });
   }
+  ws.selectedNodeId = nodeId;
   const first = ws.edgeSelection.first;
   if (!first) {
     return { ...ws, edgeSelection: { first: nodeId } };
@@ -128,7 +165,10 @@ export function selectNodeForEdge(workspace, nodeId) {
   if (first === nodeId) {
     return clearEdgeSelection(ws);
   }
-  const updatedSketch = addValidatedEdge(ws.sketch, first, nodeId, 'flow');
+  const fromNode = ws.sketch.nodes.find((n) => n.id === first);
+  const toNode = ws.sketch.nodes.find((n) => n.id === nodeId);
+  const label = `${fromNode?.type || 'node'}→${toNode?.type || 'node'}`.toLowerCase();
+  const updatedSketch = addValidatedEdge(ws.sketch, first, nodeId, label);
   return {
     ...ws,
     sketch: updatedSketch,

@@ -7,7 +7,7 @@ import { createDefaultWorkspace } from '../web/js/core/workspace-controller.js';
 import { runCapstoneConnectWizardFlow } from '../web/js/core/workspace-shell.js';
 import { CAPSTONES, WIZARD_STEPS } from '../web/js/data/curriculum.js';
 
-const SCRATCH = process.env.SCRATCH || '/var/folders/h5/777kg7xs0d3345cjkktl8qxc0000gn/T/grok-goal-8af6a0b5e05f/implementer';
+const SCRATCH = process.env.SCRATCH || '/var/folders/h5/777kg7xs0d3345cjkktl8qxc0000gn/T/grok-goal-5c88c7a4a5ac/implementer';
 mkdirSync(SCRATCH, { recursive: true });
 
 const lines = [];

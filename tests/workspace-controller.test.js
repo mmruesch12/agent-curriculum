@@ -3,13 +3,18 @@ import assert from 'node:assert/strict';
 import { CAPSTONES } from '../web/js/data/curriculum.js';
 import { validateSketch } from '../web/js/core/validators.js';
 import { generateExport } from '../web/js/core/export.js';
+import { renderSketchSvg } from '../web/js/core/sketch-render.js';
 import {
   createDefaultWorkspace,
   loadCapstone,
   resetSketch,
+  clearCanvas,
+  deleteSelectedNode,
+  deleteLastEdge,
   setWizardField,
   placeNode,
   selectNodeForEdge,
+  selectCanvasNode,
   connectNodes,
 } from '../web/js/core/workspace-controller.js';
 
@@ -28,6 +33,7 @@ describe('workspace-controller', () => {
     assert.equal(ws.sketch.edges.length, before + 1);
     const added = ws.sketch.edges.find((e) => e.from === retriever.id && e.to === memory.id);
     assert.ok(added, 'edge between retriever and memory');
+    assert.ok(added.label, 'edge has auto label');
     ws.sketch.edges.forEach((e) => {
       assert.ok(ws.sketch.nodes.some((n) => n.id === e.from));
       assert.ok(ws.sketch.nodes.some((n) => n.id === e.to));
@@ -84,5 +90,29 @@ describe('workspace-controller', () => {
     let ws = createDefaultWorkspace();
     ws = connectNodes(ws, 'missing-a', 'missing-b');
     assert.equal(ws.sketch.edges.length, 0);
+  });
+
+  it('supports delete node, delete edge, and clear canvas', () => {
+    let ws = createDefaultWorkspace();
+    ws = loadCapstone(ws, CAPSTONES[0]);
+    const nodeId = ws.sketch.nodes[0].id;
+    ws = selectCanvasNode(ws, nodeId);
+    assert.equal(ws.selectedNodeId, nodeId);
+    const edgesBefore = ws.sketch.edges.length;
+    ws = deleteSelectedNode(ws);
+    assert.equal(ws.sketch.nodes.length, CAPSTONES[0].nodes.length - 1);
+    assert.equal(ws.selectedNodeId, null);
+    ws = loadCapstone(ws, CAPSTONES[0]);
+    ws = deleteLastEdge(ws);
+    assert.equal(ws.sketch.edges.length, edgesBefore - 1);
+    ws = clearCanvas(ws);
+    assert.equal(ws.sketch.nodes.length, 0);
+    assert.equal(ws.sketch.edges.length, 0);
+  });
+
+  it('renderSketchSvg includes edge labels from capstone', () => {
+    const ws = loadCapstone(createDefaultWorkspace(), CAPSTONES[0]);
+    const svg = renderSketchSvg(ws.sketch);
+    assert.match(svg, /retrieve|store|escalate/);
   });
 });

@@ -78,18 +78,68 @@ const TOPOLOGIES = {
   },
 };
 
+/** Compute node positions and edge paths for SVG rendering from topology graph. */
+export function computeTopologyLayout(topology) {
+  const nodes = topology.nodes || [];
+  const edges = topology.edges || [];
+  const width = 520;
+  const height = 220;
+  const positions = {};
+
+  if (nodes.length === 1) {
+    positions[nodes[0].id] = { x: width / 2, y: height / 2, label: nodes[0].label };
+  } else if (topology.skills?.length) {
+    positions[nodes[0].id] = { x: width / 2, y: height / 2 - 20, label: nodes[0].label };
+  } else {
+    const cols = Math.ceil(Math.sqrt(nodes.length));
+    nodes.forEach((n, i) => {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      positions[n.id] = {
+        x: 70 + col * (width - 140) / Math.max(cols - 1, 1),
+        y: 50 + row * ((height - 100) / Math.max(Math.ceil(nodes.length / cols) - 1, 1)),
+        label: n.label,
+      };
+    });
+  }
+
+  const edgePaths = edges.map((e) => {
+    const from = positions[e.from];
+    const to = positions[e.to];
+    if (!from || !to) return null;
+    return {
+      from: e.from,
+      to: e.to,
+      parallel: e.parallel,
+      x1: from.x,
+      y1: from.y,
+      x2: to.x,
+      y2: to.y,
+    };
+  }).filter(Boolean);
+
+  return { positions, edgePaths, skills: topology.skills || [], width, height };
+}
+
 export function switchTopology(mode) {
   const topology = TOPOLOGIES[mode];
   if (!topology) throw new Error(`Unknown topology: ${mode}`);
+  const layout = computeTopologyLayout(topology);
   return {
     mode,
     topology,
     tradeoffPanel: formatTradeoffPanel(topology.tradeoffs),
+    metrics: {
+      nodeCount: topology.nodes.length,
+      edgeCount: (topology.edges || []).length,
+      parallelEdges: (topology.edges || []).filter((e) => e.parallel).length,
+    },
     viz: {
       nodes: topology.nodes,
       edges: topology.edges || [],
       skills: topology.skills || [],
       flow: topology.flow,
+      layout,
     },
   };
 }
